@@ -29,12 +29,25 @@ management. The lockfile (`uv.lock`) is the source of truth;
 ```bash
 uv sync                                # install / update deps from uv.lock
 uv run streamlit run app.py            # dev server (http://localhost:8501)
+uv run python scripts/check_db.py      # smoke-test the DB connection
 uv run pytest                          # run all tests
 uv run pytest tests/test_smoke.py::test_palette_is_colorblind_safe   # single test
 uv add <pkg>                           # add runtime dep + update lockfile
 uv add --dev <pkg>                     # add dev dep
 uv export --format requirements-txt --no-hashes --no-dev \
   --output-file requirements.txt       # regenerate requirements.txt after adding deps
+```
+
+Database commands:
+
+```bash
+./scripts/setup-db.sh                  # idempotent: copy pgsql/ -> pgdata/ + patch config
+./scripts/setup-db.sh --force          # nuke pgdata/ and recopy
+docker compose up -d                   # start Postgres 13 container
+docker compose logs -f db              # tail logs
+docker compose down                    # stop (data preserved in pgdata/)
+docker exec -it usability-db psql \
+  -U smartmonitoring_airquality -d smartmonitoring_airquality
 ```
 
 Python is pinned to `>=3.12` in `pyproject.toml`. uv will provision a
@@ -48,8 +61,12 @@ app_pages/*.py      ── one module per page; UI only
 src/
   components/       ── reusable UI primitives (KPI tile, filter bar…)
   data/             ── @st.cache_data loaders; pages never do I/O directly
+  db/               ── cached SQLAlchemy engine + reusable SQL
   utils/            ── palette tokens, formatters, a11y helpers
 .streamlit/config.toml  ── theme (colorblind-safe palette, light + dark)
+docker-compose.yml  ── Postgres 13 + PostGIS (imresamu/postgis:13-3.5) + pgweb browser UI on :8081
+scripts/setup-db.sh ── idempotent: copy pgsql/ -> pgdata/ + patch Windows-era config
+docs/data_schema.md ── reverse-engineered schema reference (read this before writing SQL)
 ```
 
 The split is enforced by convention, not tooling:
@@ -86,10 +103,30 @@ The categorical palette in the config mirrors `OKABE_ITO` in
 
 ## Data source
 
-A local Postgres data directory ships at `pgsql/` (gitignored —
-binary, ~60 MB). It's a frozen snapshot of the air-quality dataset
-used as the development source. Loaders in `src/data/` will read from
-it (or from exports placed in `assets/`).
+The dataset is a frozen **PostgreSQL 13 data directory** (PGDATA, not
+a `pg_dump` file) shipped at `pgsql/` — about 1.8 GB, gitignored. It
+was created on a Windows install years ago, so a few Windows-isms
+need patching before a Linux container can boot it:
+
+- `dynamic_shared_memory_type = windows` → `posix`
+- `lc_*` = `'German_Germany.1252'` → `'C'`
+- `pg_hba.conf` needs a wider trust rule (Docker bridges from a
+  non-localhost IP)
+- Database-level locale `German_Germany.1252` baked into every row of
+  `pg_database`. `setup-db.sh` rewrites it to `C` via a one-shot
+  single-user `UPDATE pg_database`, running inside a throw-away
+  `postgres:13-alpine` container (musl libc is permissive about the
+  legacy locale name and lets us open the DBs long enough to fix
+  them). Once repaired, the main `imresamu/postgis:13-3.5` container
+  (glibc) opens the databases normally and PostGIS works.
+
+`scripts/setup-db.sh` handles all the above. It copies `pgsql/` into
+`pgdata/` (gitignored, the container's actual storage) and applies the
+patches. Run once after `git clone`; idempotent on re-runs.
+
+**Always read [`docs/data_schema.md`](docs/data_schema.md) before
+writing SQL** — the schema is non-obvious (per-MAC sensor tables, soft
+references without FK constraints, three distinct sensor table shapes).
 
 ## Conventions
 

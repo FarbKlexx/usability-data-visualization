@@ -2,8 +2,14 @@
 .DS_Store
 Thumbs.db
 
-# Local Postgres data dump (project-specific, large binary)
+# Source Postgres data directory (project-specific, large binary)
 pgsql/
+
+# Working copy that Docker writes to (materialised by scripts/setup-db.sh)
+pgdata/
+
+# Local credentials
+.env
 
 # Python
 __pycache__/

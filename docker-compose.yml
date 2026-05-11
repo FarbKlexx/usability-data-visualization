@@ -1,0 +1,55 @@
+# Local Postgres for the Air Quality dashboard.
+#
+# We bind-mount ./pgdata (a working copy of the immutable ./pgsql source)
+# into postgres:13 so Postgres can boot directly against the existing
+# data directory. Run `scripts/setup-db.sh` once to materialise pgdata/.
+
+services:
+  db:
+    # PostGIS-enabled Postgres 13. The dump has geometry columns in
+    # tbl_location, tbl_routes_planned, and every sensor_* table — the
+    # bare postgres images can't read those rows.
+    #
+    # imresamu's multi-arch build ships arm64 (unlike the official
+    # postgis/postgis tags, which are amd64-only). It is glibc-based,
+    # which would normally reject the dump's Windows-era
+    # 'German_Germany.1252' locale; scripts/setup-db.sh runs a one-shot
+    # single-user UPDATE on pg_database to rewrite that to 'C' before
+    # we ever try to open the databases here.
+    image: imresamu/postgis:13-3.5
+    container_name: usability-db
+    restart: unless-stopped
+    environment:
+      # The existing pg_hba.conf already permits trust auth for local +
+      # 127.0.0.1, so no password is required. We still set this so the
+      # entrypoint doesn't bail out demanding POSTGRES_PASSWORD.
+      POSTGRES_HOST_AUTH_METHOD: trust
+      PGDATA: /var/lib/postgresql/data
+    # The baked-in postgresql.conf has listen_addresses unset (= localhost
+    # only). Override here so the port-mapped Postgres is reachable from
+    # the host without modifying the source config further.
+    command: postgres -c listen_addresses=*
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Browser-based Postgres explorer. Auto-connects via DATABASE_URL,
+  # so visiting http://localhost:8081 lands directly on the table list.
+  # Read-only browsing is fine for trust auth; do not expose externally.
+  pgweb:
+    image: sosedoff/pgweb:0.16.2
+    container_name: usability-pgweb
+    restart: unless-stopped
+    environment:
+      PGWEB_DATABASE_URL: postgres://smartmonitoring_airquality@db:5432/smartmonitoring_airquality?sslmode=disable
+    ports:
+      - "8081:8081"
+    depends_on:
+      db:
+        condition: service_healthy
