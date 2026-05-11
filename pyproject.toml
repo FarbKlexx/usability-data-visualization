@@ -1,0 +1,15 @@
+[project]
+name = "usability-data-visualization"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "plotly>=5.22",
+    "streamlit>=1.53.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]

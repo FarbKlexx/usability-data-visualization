@@ -1,2 +1,29 @@
-pgsql
+# OS
 .DS_Store
+Thumbs.db
+
+# Local Postgres data dump (project-specific, large binary)
+pgsql/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtualenv (uv default)
+.venv/
+venv/
+
+# Streamlit local state / secrets
+.streamlit/secrets.toml
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Build artefacts
+dist/
+build/

@@ -1,0 +1,63 @@
+# Streamlit theme placeholder.
+#
+# Calm, neutral base with Okabe-Ito-friendly accent colors. Tweak
+# colors here — never via st.markdown/<style> — to keep the design
+# system honest and accessible (see CONTEXT.md §Color and §Aesthetics).
+
+[theme]
+base = "light"
+primaryColor = "#0072B2"               # Okabe-Ito blue
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6F8"
+textColor = "#1F2328"
+linkColor = "#0072B2"
+borderColor = "#D0D7DE"
+baseRadius = "8px"
+buttonRadius = "8px"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+
+baseFontSize = 15
+headingFontWeights = [600, 600, 600, 500, 500, 500]
+
+# Categorical chart palette — colorblind-safe (Okabe & Ito).
+chartCategoricalColors = [
+    "#0072B2",
+    "#E69F00",
+    "#009E73",
+    "#CC79A7",
+    "#56B4E9",
+    "#D55E00",
+    "#F0E442",
+]
+
+# Sequential palette — Viridis (perceptually uniform). Exactly 10 stops.
+chartSequentialColors = [
+    "#FDE725",
+    "#B5DE2B",
+    "#6DCD59",
+    "#35B779",
+    "#1F9E89",
+    "#26828E",
+    "#31688E",
+    "#3E4A89",
+    "#482878",
+    "#440154",
+]
+
+# Semantic status colors — also Okabe-Ito.
+blueColor = "#0072B2"
+greenColor = "#009E73"
+yellowColor = "#F0E442"
+orangeColor = "#E69F00"
+redColor = "#D55E00"
+violetColor = "#CC79A7"
+
+[theme.dark]
+primaryColor = "#56B4E9"
+backgroundColor = "#0D1117"
+secondaryBackgroundColor = "#161B22"
+textColor = "#E6EDF3"
+linkColor = "#56B4E9"
+borderColor = "#30363D"
