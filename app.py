@@ -31,9 +31,24 @@ PAGES = [
         default=True,
     ),
     st.Page(
-        "app_pages/explore.py",
-        title="Explore",
-        icon=":material/insights:",
+        "app_pages/timeseries.py",
+        title="Time Series",
+        icon=":material/timeline:",
+    ),
+    st.Page(
+        "app_pages/map.py",
+        title="Map",
+        icon=":material/map:",
+    ),
+    st.Page(
+        "app_pages/comparison.py",
+        title="Comparison",
+        icon=":material/compare_arrows:",
+    ),
+    st.Page(
+        "app_pages/devices.py",
+        title="Devices & Data Quality",
+        icon=":material/sensors:",
     ),
 ]
 
