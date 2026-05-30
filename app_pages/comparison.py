@@ -82,8 +82,20 @@ with tab_dist:
     )
     st.caption("Box = inter-quartile range with median; whiskers reach the min/max.")
 
+show = stats.assign(sensor=stats["table_name"].map(lambda t: label_map.get(t, t)))
+
+# A6: export the current comparison (post-filter) as CSV.
+st.download_button(
+    "Download comparison (CSV)",
+    data=show[["sensor", "n", "avg", "min", "q1", "median", "q3", "max", "n_hidden"]]
+    .to_csv(index=False)
+    .encode("utf-8"),
+    file_name=f"comparison_{get(metric_key).key}_{fs.range_key.replace(' ', '')}.csv",
+    mime="text/csv", icon=":material/download:",
+    help="The per-sensor summary statistics currently shown.",
+)
+
 with st.expander("Show the numbers"):
-    show = stats.assign(sensor=stats["table_name"].map(lambda t: label_map.get(t, t)))
     st.dataframe(
         show[["sensor", "n", "avg", "min", "q1", "median", "q3", "max", "n_hidden"]],
         hide_index=True, width="stretch",

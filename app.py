@@ -50,6 +50,11 @@ PAGES = [
         title="Devices & Data Quality",
         icon=":material/sensors:",
     ),
+    st.Page(
+        "app_pages/manage.py",
+        title="Manage",
+        icon=":material/tune:",
+    ),
 ]
 
 page = st.navigation(PAGES, position="top")

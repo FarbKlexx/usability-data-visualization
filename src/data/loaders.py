@@ -29,7 +29,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from src.db import SCHEMA, read_sql, safe_sensor_table, sensor_table_allowlist
+from src.db import SCHEMA, is_sensor_table, read_sql, safe_sensor_table, sensor_table_allowlist
 from src.utils.metrics import METRICS, Metric, get
 
 # --- Shape / column resolution ---------------------------------------------
@@ -164,7 +164,8 @@ def load_devices() -> pd.DataFrame:
     oo = read_sql(
         f"""
         SELECT oo.id AS oo_id, oo.name, oo.ootype_id, oo.mac,
-               loc.city, loc.country,
+               oo.description, oo.icon, oo.datacapture,
+               lj.loc_id, loc.city, loc.country, loc.street, loc.postcode,
                ST_X(loc.coordinates) AS lon, ST_Y(loc.coordinates) AS lat
         FROM {SCHEMA}.tbl_observedobject oo
         LEFT JOIN {SCHEMA}.tbl_location_join_oo lj ON lj.oo_id = oo.id
@@ -300,14 +301,22 @@ def load_timeseries(
     start: datetime,
     end: datetime,
     bucket_seconds: int | None = None,
+    clean: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, int], int]:
-    """Downsampled, sentinel-cleaned series for a sensor.
+    """Downsampled time series for a sensor (plan §A2/§A3).
 
-    Aggregates each metric to time buckets via ``avg`` with sentinels
-    excluded *before* averaging. Returns ``(df, hidden_counts, bucket_s)``:
+    Aggregates each metric to time buckets via ``avg``. When ``clean`` is
+    True (default) saturation sentinels are excluded *before* averaging;
+    when False the raw values are averaged so the user can inspect the
+    saturation behaviour directly (raw/cleaned toggle, plan §A3).
+
+    Returns ``(df, hidden_counts, bucket_s)``:
 
         df            — columns: ts + one per requested+available metric
-        hidden_counts — {metric_key: n_values_hidden} (only non-zero)
+        hidden_counts — {metric_key: n}; with ``clean`` these are the
+                        values *hidden*, otherwise the values the filter
+                        *would* remove (so the UI can disclose the count
+                        either way)
         bucket_s      — the bucket size actually used (seconds)
     """
     safe = safe_sensor_table(table)
@@ -319,7 +328,8 @@ def load_timeseries(
 
     value_cols, hidden_cols = [], []
     for m, col in pairs:
-        value_cols.append(f"avg({_clean_expr(col, m)}) AS {m.key}")
+        agg = _clean_expr(col, m) if clean else f'"{col}"'
+        value_cols.append(f"avg({agg}) AS {m.key}")
         if m.sentinel is not None:
             hidden_cols.append(f'count(*) FILTER (WHERE "{col}" >= {m.sentinel}) AS {m.key}__hidden')
 
@@ -479,3 +489,164 @@ def load_particle_sizes(table: str, start: datetime, end: datetime) -> pd.DataFr
         for c, lbl in number if pd.notna(row[c])
     ]
     return pd.DataFrame.from_records(records)
+
+
+# --- User-content loaders (interactivity plan §B) ---------------------------
+# These read the dashboard_* tables written by the interactivity layer
+# (created by scripts/add_dashboard_tables.py). TTLs are short because,
+# unlike the frozen measurement data, this content changes at runtime;
+# the write layer also clears these caches on every successful write.
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def dashboard_tables_ready() -> bool:
+    """True iff all four ``dashboard_*`` tables exist (migration applied)."""
+    rows = read_sql(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = :schema AND table_name LIKE 'dashboard\\_%'
+        """,
+        {"schema": SCHEMA},
+    )
+    found = set(rows["table_name"])
+    needed = {
+        "dashboard_annotations",
+        "dashboard_reading_flags",
+        "dashboard_thresholds",
+        "dashboard_saved_views",
+    }
+    return needed.issubset(found)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_annotations(table_name: str) -> pd.DataFrame:
+    """Time-range annotations for a sensor, oldest first (plan §B4).
+
+    Keyed by the sensor's ``table_name`` (stored in the ``mac`` column).
+    Columns: ``id, ts_from, ts_to, label, note, created_at``. Empty frame
+    if the migration has not run or the name is not a sensor table.
+    """
+    cols = ["id", "ts_from", "ts_to", "label", "note", "created_at"]
+    if not dashboard_tables_ready() or not is_sensor_table(table_name):
+        return pd.DataFrame(columns=cols)
+    return read_sql(
+        f"""
+        SELECT id, ts_from, ts_to, label, note, created_at
+        FROM {SCHEMA}.dashboard_annotations
+        WHERE mac = :mac
+        ORDER BY ts_from, id
+        """,
+        {"mac": table_name},
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_reading_flags(table_name: str) -> pd.DataFrame:
+    """All reading flags attached to one sensor table (plan §B5).
+
+    Columns: ``id, reading_id, flag, note, created_at``. Callers filter
+    to the displayed ids in pandas (flag counts are tiny). Empty frame if
+    the migration has not run.
+    """
+    cols = ["id", "reading_id", "flag", "note", "created_at"]
+    if not dashboard_tables_ready() or not is_sensor_table(table_name):
+        return pd.DataFrame(columns=cols)
+    return read_sql(
+        f"""
+        SELECT id, reading_id, flag, note, created_at
+        FROM {SCHEMA}.dashboard_reading_flags
+        WHERE table_name = :t
+        ORDER BY reading_id
+        """,
+        {"t": table_name},
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_raw_readings(
+    table: str, start: datetime, end: datetime, limit: int = 200
+) -> pd.DataFrame:
+    """Raw (un-aggregated) rows with their ``id`` for the flag inspector.
+
+    The time-series chart is downsampled, so flagging an individual point
+    needs the real row ids. Returns ``id, ts`` + every available metric
+    column for the newest ``limit`` rows in range. Sentinels are **not**
+    cleaned here — this view exists precisely to inspect them (plan §B5).
+    """
+    safe = safe_sensor_table(table)
+    pairs = available_metrics(table)
+    metric_cols = ", ".join(f'"{c}" AS {m.key}' for m, c in pairs)
+    select = f"id, ts{', ' + metric_cols if metric_cols else ''}"
+    return read_sql(
+        f"""
+        SELECT {select} FROM {safe}
+        WHERE ts >= :start AND ts < :end
+        ORDER BY ts DESC
+        LIMIT :limit
+        """,
+        {"start": start, "end": end, "limit": int(limit)},
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_thresholds() -> pd.DataFrame:
+    """Persisted metric thresholds (plan §B6).
+
+    Columns: ``id, metric, value, label, created_at``. Empty if the
+    migration has not run.
+    """
+    cols = ["id", "metric", "value", "label", "created_at"]
+    if not dashboard_tables_ready():
+        return pd.DataFrame(columns=cols)
+    return read_sql(
+        f"""
+        SELECT id, metric, value, label, created_at
+        FROM {SCHEMA}.dashboard_thresholds
+        ORDER BY metric, value
+        """
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_saved_views() -> pd.DataFrame:
+    """Persisted saved views, newest first (plan §A7 → §B6).
+
+    Columns: ``id, name, params_json (dict), created_at``. Empty if the
+    migration has not run.
+    """
+    cols = ["id", "name", "params_json", "created_at"]
+    if not dashboard_tables_ready():
+        return pd.DataFrame(columns=cols)
+    return read_sql(
+        f"""
+        SELECT id, name, params_json, created_at
+        FROM {SCHEMA}.dashboard_saved_views
+        ORDER BY created_at DESC, id DESC
+        """
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_feature_flags() -> pd.DataFrame:
+    """The ``func_*`` UI feature flags from ``tbl_systemconfiguration`` (§B3).
+
+    Columns: ``id, ckey, ctype, cvalue, active``. These drive optional
+    modules — a page reads them on load to show/hide a feature.
+    """
+    return read_sql(
+        f"""
+        SELECT id, ckey, ctype, cvalue, active
+        FROM {SCHEMA}.tbl_systemconfiguration
+        WHERE ckey LIKE 'func\\_%'
+        ORDER BY ckey
+        """
+    )
+
+
+def feature_enabled(ckey: str, default: bool = True) -> bool:
+    """Whether a named feature flag is active (missing key → ``default``)."""
+    flags = load_feature_flags()
+    hit = flags[flags["ckey"] == ckey]
+    if hit.empty:
+        return default
+    return bool(hit.iloc[0]["active"])

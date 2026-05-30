@@ -45,18 +45,43 @@ def _empty(message: str) -> go.Figure:
     return fig
 
 
-def line_chart(df: pd.DataFrame, metric_keys: list[str] | tuple[str, ...], *, height: int = 380) -> go.Figure:
+def line_chart(
+    df: pd.DataFrame,
+    metric_keys: list[str] | tuple[str, ...],
+    *,
+    height: int = 380,
+    smooth: pd.DataFrame | None = None,
+    thresholds: dict[str, float] | None = None,
+    annotations: list[dict] | None = None,
+) -> go.Figure:
     """Multi-series time line. Click a legend entry to toggle a series.
 
     All series share one honest Y axis only when they share a unit; if
     units differ the caller should prefer :func:`small_multiples` instead
     (no misleading dual axes).
+
+    Optional interactivity overlays (plan §A2/§A4/§B4):
+
+    * ``smooth`` — a frame aligned on ``ts`` carrying rolling-average
+      columns (same metric keys); drawn as a thicker dashed overlay so the
+      raw series stays visible underneath (honest: the smoothing is shown,
+      not substituted).
+    * ``thresholds`` — ``{metric_key: value}`` reference lines; points at
+      or above the line are emphasised with markers (color is not the only
+      channel — there is a labelled line + markers).
+    * ``annotations`` — ``[{"ts_from", "ts_to", "label"}]`` shaded spans /
+      vertical markers for saved notes.
     """
     present = [k for k in metric_keys if k in df.columns and df[k].notna().any()]
     if df.empty or not present:
         return _empty("No data in the selected range.")
 
     fig = go.Figure()
+
+    # Annotation bands first, so series draw on top of the shading.
+    for ann in annotations or []:
+        _add_annotation_shape(fig, ann)
+
     for key in present:
         metric = get(key)
         fig.add_trace(
@@ -67,6 +92,33 @@ def line_chart(df: pd.DataFrame, metric_keys: list[str] | tuple[str, ...], *, he
                 connectgaps=False,  # gaps (hidden sentinels / outages) stay visible
             )
         )
+        # Rolling-average overlay (plan §A2): dashed, same hue, on top.
+        if smooth is not None and key in smooth.columns and smooth[key].notna().any():
+            fig.add_trace(
+                go.Scatter(
+                    x=smooth["ts"], y=smooth[key], name=f"{metric.label} (avg)",
+                    mode="lines", line=dict(color=metric.color, width=2.6, dash="dash"),
+                    hovertemplate=_hovertemplate(metric), connectgaps=False,
+                )
+            )
+        # Threshold line + emphasised exceedances (plan §A4).
+        thr = (thresholds or {}).get(key)
+        if thr is not None:
+            fig.add_hline(
+                y=thr, line=dict(color=metric.color, width=1.4, dash="dot"),
+                annotation_text=f"{metric.short_label} ≥ {thr:g} {metric.unit}",
+                annotation_position="top left", annotation_font_size=11,
+            )
+            over = df[df[key] >= thr]
+            if not over.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=over["ts"], y=over[key], name=f"{metric.label} ≥ threshold",
+                        mode="markers",
+                        marker=dict(color=metric.color, size=7, symbol="circle-open", line=dict(width=2)),
+                        hovertemplate=_hovertemplate(metric), showlegend=False,
+                    )
+                )
 
     units = {get(k).unit for k in present}
     y_title = next(iter(units)) if len(units) == 1 else "value"
@@ -79,6 +131,26 @@ def line_chart(df: pd.DataFrame, metric_keys: list[str] | tuple[str, ...], *, he
     )
     fig.update_yaxes(rangemode="tozero" if starts_zero else "normal")
     return fig
+
+
+def _add_annotation_shape(fig: go.Figure, ann: dict) -> None:
+    """Draw one annotation as a shaded span (range) or vline (point)."""
+    ts_from = ann.get("ts_from")
+    ts_to = ann.get("ts_to")
+    label = str(ann.get("label", "")) or "note"
+    band = "rgba(120,120,120,0.13)"
+    if ts_to is not None and pd.notna(ts_to) and ts_to != ts_from:
+        fig.add_vrect(
+            x0=ts_from, x1=ts_to, fillcolor=band, line_width=0, layer="below",
+            annotation_text=label, annotation_position="top left",
+            annotation_font_size=11,
+        )
+    else:
+        fig.add_vline(
+            x=ts_from, line=dict(color="rgba(90,90,90,0.6)", width=1.2, dash="dot"),
+            annotation_text=label, annotation_position="top",
+            annotation_font_size=11,
+        )
 
 
 def small_multiples(df: pd.DataFrame, metric_keys: list[str] | tuple[str, ...], *, row_height: int = 150) -> go.Figure:

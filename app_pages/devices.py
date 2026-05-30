@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pandas as pd
 import streamlit as st
 
 from src.components import charts
 from src.data import load_comparison, load_devices
+from src.db import update_object
 
 st.title(":material/sensors: Devices & Data Quality")
 st.caption("The full device catalog and an honest account of the data's quirks.")
@@ -118,3 +120,67 @@ Handled centrally in the data layer so every view tells the same story:
   time-range queries stay responsive.
 """
 )
+
+st.divider()
+
+# --- Edit device metadata (interactivity plan §B1) --------------------------
+st.subheader(":material/edit: Edit device metadata")
+st.caption(
+    "Update the catalog entry for a registered device. Only descriptive "
+    "fields are editable — measurement data is never touched."
+)
+
+editable = devices[devices["oo_id"].notna()].copy()
+if editable.empty:
+    st.info("No registered devices to edit.", icon=":material/info:")
+else:
+    options = [int(v) for v in editable["oo_id"]]
+    name_by_id = {int(r["oo_id"]): str(r["name"]) for _, r in editable.iterrows()}
+    # Drop a stale selection before the widget binds (else selectbox raises).
+    if st.session_state.get("edit_device_id") not in options:
+        st.session_state.pop("edit_device_id", None)
+    chosen_id = st.selectbox(
+        "Device", options=options, format_func=lambda i: name_by_id.get(i, str(i)),
+        key="edit_device_id", help="Pick the device whose metadata you want to edit.",
+    )
+    row = editable[editable["oo_id"] == chosen_id].iloc[0]
+
+    def _clean(v: object) -> str:
+        return "" if v is None or (isinstance(v, float) and pd.isna(v)) else str(v)
+
+    with st.form("edit_device", border=True):
+        name = st.text_input("Name", value=_clean(row.get("name")), max_chars=255)
+        description = st.text_area("Description", value=_clean(row.get("description")), height=80)
+        icon = st.text_input(
+            "Icon", value=_clean(row.get("icon")),
+            help="A Material icon name, e.g. sensors or place.",
+        )
+        datacapture = st.checkbox(
+            "Data capture enabled",
+            value=bool(row.get("datacapture")) if pd.notna(row.get("datacapture")) else False,
+            help="Whether this device is actively collecting (metadata flag only).",
+        )
+        c_save, c_hint = st.columns([0.25, 0.75], vertical_alignment="center")
+        submitted = c_save.form_submit_button(
+            "Save changes", icon=":material/save:", type="primary", width="stretch"
+        )
+        c_hint.caption("Changes are written in one transaction; the catalog reloads on save.")
+
+    if submitted:
+        if not name.strip():
+            st.error("Name cannot be empty.", icon=":material/error:")
+        else:
+            try:
+                n = update_object(
+                    int(chosen_id),
+                    {
+                        "name": name.strip(),
+                        "description": description.strip() or None,
+                        "icon": icon.strip() or None,
+                        "datacapture": bool(datacapture),
+                    },
+                )
+                st.success(f"Saved — {n} row updated.", icon=":material/check_circle:")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001 — surface write failures to the user
+                st.error(f"Could not save: {exc}", icon=":material/error:")
