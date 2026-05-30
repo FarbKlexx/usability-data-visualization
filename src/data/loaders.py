@@ -356,6 +356,28 @@ def load_timeseries(
     return df, hidden_counts, bs
 
 
+def build_comparison_frame(
+    df: pd.DataFrame, metric_keys: list[str] | tuple[str, ...]
+) -> pd.DataFrame:
+    """Aligned multi-measure frame for correlation (correlation plan §C).
+
+    On a single Shape-A sensor every measure of a moment shares one row
+    and timestamp, so no time alignment is needed: we keep ``ts`` plus the
+    chosen metric columns and drop any row where one of those measures is
+    missing (a hidden sentinel or an outage), leaving only fully-paired
+    samples. The caller can compare ``len`` before/after to disclose how
+    many rows alignment removed.
+
+    Returns an empty frame (with the requested columns) when none of the
+    metric keys are present, rather than raising.
+    """
+    value_cols = [k for k in metric_keys if k in df.columns]
+    cols = (["ts"] if "ts" in df.columns else []) + value_cols
+    if not value_cols:
+        return df.loc[:, cols].iloc[0:0] if cols else df.iloc[0:0]
+    return df.loc[:, cols].dropna(subset=value_cols).reset_index(drop=True)
+
+
 # --- Comparison (bars + box stats) -----------------------------------------
 
 

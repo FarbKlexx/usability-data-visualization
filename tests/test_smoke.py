@@ -35,6 +35,7 @@ def test_src_imports() -> None:
         "src.utils.metrics",
         "src.utils.clean",
         "src.utils.aqi",
+        "src.utils.correlate",
     ):
         importlib.import_module(mod)
 
@@ -83,6 +84,114 @@ def test_clean_hides_sentinels_and_counts_them() -> None:
     assert cleaned.dropna().tolist() == [2.8, 5.0]
     assert hidden_notice({"pm2_5": 2})  # non-empty notice
     assert hidden_notice({}) is None
+
+
+# --- Multi-measure / correlation graph --------------------------------------
+
+
+def test_build_comparison_frame_drops_unpaired_rows() -> None:
+    import pandas as pd
+
+    from src.data.loaders import build_comparison_frame
+
+    df = pd.DataFrame(
+        {
+            "ts": pd.date_range("2025-01-01", periods=4, freq="h"),
+            "pm2_5": [1.0, None, 3.0, 4.0],
+            "temp1": [10.0, 11.0, None, 13.0],
+            "co2": [400, 410, 420, 430],  # not selected -> excluded from frame
+        }
+    )
+    out = build_comparison_frame(df, ["pm2_5", "temp1"])
+    # Only rows where BOTH selected measures are present survive (rows 0 and 3).
+    assert list(out.columns) == ["ts", "pm2_5", "temp1"]
+    assert len(out) == 2
+    assert out["pm2_5"].tolist() == [1.0, 4.0]
+
+
+def test_normalize_frame_scales_to_unit_range_and_keeps_real_ranges() -> None:
+    import pandas as pd
+
+    from src.utils.correlate import normalize_frame
+
+    frame = pd.DataFrame({"ts": [1, 2, 3], "temp1": [10.0, 20.0, 30.0], "inn_hum": [50.0, 50.0, 50.0]})
+    scaled, ranges = normalize_frame(frame, ["temp1", "inn_hum"])
+    assert scaled["temp1"].tolist() == [0.0, 0.5, 1.0]
+    assert ranges["temp1"] == (10.0, 30.0)
+    # A constant series has no shape -> mapped to the mid-line, range recorded.
+    assert scaled["inn_hum"].tolist() == [0.5, 0.5, 0.5]
+    assert ranges["inn_hum"] == (50.0, 50.0)
+
+
+def test_compute_correlation_two_measures_perfect_and_fit() -> None:
+    import pandas as pd
+
+    from src.utils.correlate import compute_correlation
+
+    frame = pd.DataFrame({"pm2_5": [1.0, 2.0, 3.0, 4.0], "temp1": [2.0, 4.0, 6.0, 8.0]})
+    res = compute_correlation(frame, ("pm2_5", "temp1"))
+    assert res.matrix is None
+    assert res.n == 4
+    assert res.r == pytest.approx(1.0)
+    # y = 2x exactly -> least-squares slope 2, intercept 0.
+    assert res.slope == pytest.approx(2.0)
+    assert res.intercept == pytest.approx(0.0)
+
+
+def test_compute_correlation_spearman_is_scipy_free_and_rank_based() -> None:
+    import pandas as pd
+
+    from src.utils.correlate import compute_correlation
+
+    # Monotonic but non-linear (y = x**3): Spearman = 1 (perfect rank order),
+    # Pearson < 1. Must not need scipy — pandas' native spearman would import it.
+    frame = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": [1.0, 8.0, 27.0, 64.0, 125.0]})
+    sp = compute_correlation(frame, ("a", "b"), method="spearman")
+    pe = compute_correlation(frame, ("a", "b"), method="pearson")
+    assert sp.r == pytest.approx(1.0)
+    assert pe.r < 0.99
+    # Spearman draws no straight-line fit (it is rank-based).
+    assert sp.slope is None and pe.slope is not None
+
+
+def test_compute_correlation_matrix_for_three_measures() -> None:
+    import pandas as pd
+
+    from src.utils.correlate import compute_correlation
+
+    frame = pd.DataFrame(
+        {"pm2_5": [1.0, 2.0, 3.0], "temp1": [3.0, 2.0, 1.0], "co2": [1.0, 2.0, 3.0]}
+    )
+    res = compute_correlation(frame, ("pm2_5", "temp1", "co2"))
+    assert res.r is None
+    assert res.matrix is not None and res.matrix.shape == (3, 3)
+    # pm2_5 and co2 move together; pm2_5 and temp1 move oppositely.
+    assert res.matrix.loc["pm2_5", "co2"] == pytest.approx(1.0)
+    assert res.matrix.loc["pm2_5", "temp1"] == pytest.approx(-1.0)
+
+
+def test_compute_correlation_lag_shifts_second_measure() -> None:
+    import pandas as pd
+
+    from src.utils.correlate import compute_correlation
+
+    # b runs one step ahead of a; shifting b forward by one bucket (lag=+1)
+    # realigns them perfectly, scoring higher than the unshifted correlation.
+    frame = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": [2.0, 3.0, 4.0, 5.0, 9.0]})
+    base = compute_correlation(frame, ("a", "b"))
+    lagged = compute_correlation(frame, ("a", "b"), lag=1)
+    assert lagged.r == pytest.approx(1.0)
+    assert lagged.r > (base.r or 0)
+    assert lagged.lag == 1
+
+
+def test_interpret_r_words_and_undefined() -> None:
+    from src.utils.correlate import interpret_r
+
+    assert interpret_r(0.95) == "very strong positive"
+    assert interpret_r(-0.4) == "moderate negative"
+    assert interpret_r(0.02) == "negligible"
+    assert interpret_r(None) == "undefined"
 
 
 # --- CAQI band --------------------------------------------------------------

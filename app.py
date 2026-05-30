@@ -46,6 +46,11 @@ PAGES = [
         icon=":material/compare_arrows:",
     ),
     st.Page(
+        "app_pages/correlation.py",
+        title="Correlation",
+        icon=":material/scatter_plot:",
+    ),
+    st.Page(
         "app_pages/devices.py",
         title="Devices & Data Quality",
         icon=":material/sensors:",

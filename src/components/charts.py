@@ -24,7 +24,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from src.utils.metrics import Metric, get, label_with_unit
+from src.utils.metrics import METRICS, Metric, get, label_with_unit
 from src.utils.palette import OKABE_ITO
 
 _AXIS_FROM_ZERO = {"pm2_5", "pm10_0", "co2", "inn_hum", "caqi"}  # concentrations/counts
@@ -381,6 +381,213 @@ def coverage_timeline(df: pd.DataFrame, *, height: int = 420) -> go.Figure:
     fig.update_yaxes(autorange="reversed", title=None)
     fig.update_xaxes(title=None)
     fig.update_layout(height=height, margin=dict(l=8, r=8, t=8, b=8))
+    return fig
+
+
+# --- Multi-measure / correlation graph (correlation plan §B) ----------------
+
+
+def normalized_overlay(
+    df: pd.DataFrame,
+    metric_keys: list[str] | tuple[str, ...],
+    ranges: dict[str, tuple[float, float]] | None = None,
+    *,
+    height: int = 420,
+) -> go.Figure:
+    """Overlaid min–max-scaled lines for *shape* comparison (plan §B1).
+
+    Every selected measure is drawn on one 0–1 axis so the user can see
+    whether peaks and troughs line up in time despite wildly different
+    units. ``df`` is the *scaled* frame from
+    :func:`src.utils.correlate.normalize_frame`; ``ranges`` (its companion
+    ``{key: (min, max)}``) lets the hover show each point's real value, so
+    the absolute scale stays recoverable (honesty — normalization is
+    disclosed, never hidden).
+    """
+    present = [k for k in metric_keys if k in df.columns and df[k].notna().any()]
+    if df.empty or not present:
+        return _empty("No paired data in the selected range.")
+
+    fig = go.Figure()
+    for key in present:
+        metric = get(key)
+        lo, hi = (ranges or {}).get(key, (None, None))
+        # Recover the real value for the tooltip from the normalized one.
+        if lo is not None and hi is not None and hi > lo:
+            real = df[key] * (hi - lo) + lo
+        else:
+            real = df[key]
+        hover = (
+            f"%{{x|%Y-%m-%d %H:%M}}<br>{metric.label}: "
+            f"%{{customdata:.{metric.decimals}f}} {metric.unit} "
+            f"(norm %{{y:.2f}})<extra></extra>"
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["ts"], y=df[key], name=metric.label, mode="lines",
+                line=dict(color=metric.color, width=2), connectgaps=False,
+                customdata=real, hovertemplate=hover,
+            )
+        )
+    fig.update_layout(
+        height=height, margin=dict(l=8, r=8, t=8, b=8), hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis_title=None, yaxis_title="normalized (0–1)",
+    )
+    fig.update_yaxes(range=[-0.02, 1.02])
+    return fig
+
+
+def dual_axis_lines(
+    df: pd.DataFrame, key_a: str, key_b: str, *, height: int = 420
+) -> go.Figure:
+    """Two measures in their *real* units on a left / right axis (plan §B2).
+
+    Honest-use caveat: independent axes can be slid to make any two series
+    appear to track, so this view is for reading absolute values while
+    eyeballing co-movement — the scatter view (:func:`scatter_correlation`)
+    is what actually quantifies the relationship. Each axis keeps its own
+    honest range (concentrations from zero; signed measures free).
+    """
+    present = [k for k in (key_a, key_b) if k in df.columns and df[k].notna().any()]
+    if df.empty or len(present) < 2:
+        return _empty("Need two measures with data in this range.")
+
+    ma, mb = get(key_a), get(key_b)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["ts"], y=df[key_a], name=ma.label, mode="lines", yaxis="y",
+            line=dict(color=ma.color, width=2), connectgaps=False,
+            hovertemplate=_hovertemplate(ma),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["ts"], y=df[key_b], name=mb.label, mode="lines", yaxis="y2",
+            line=dict(color=mb.color, width=2), connectgaps=False,
+            hovertemplate=_hovertemplate(mb),
+        )
+    )
+    fig.update_layout(
+        height=height, margin=dict(l=8, r=8, t=8, b=8), hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis_title=None,
+        yaxis=dict(
+            title=label_with_unit(key_a), title_font=dict(color=ma.color),
+            tickfont=dict(color=ma.color),
+            rangemode="tozero" if key_a in _AXIS_FROM_ZERO else "normal",
+        ),
+        yaxis2=dict(
+            title=label_with_unit(key_b), title_font=dict(color=mb.color),
+            tickfont=dict(color=mb.color), overlaying="y", side="right",
+            rangemode="tozero" if key_b in _AXIS_FROM_ZERO else "normal",
+        ),
+    )
+    return fig
+
+
+def scatter_correlation(
+    frame: pd.DataFrame,
+    x_key: str,
+    y_key: str,
+    *,
+    slope: float | None = None,
+    intercept: float | None = None,
+    color_by_time: bool = True,
+    height: int = 460,
+) -> go.Figure:
+    """Scatter of measure A (X) vs B (Y) — the relationship itself (§B3).
+
+    One marker per aligned sample, optionally colored by time so within-
+    period drift is visible, with an optional least-squares trend line
+    (pass ``slope``/``intercept`` from
+    :func:`src.utils.correlate.compute_correlation`).
+    """
+    mx, my = get(x_key), get(y_key)
+    if frame.empty or x_key not in frame.columns or y_key not in frame.columns:
+        return _empty("No paired samples in the selected range.")
+    pts = frame[[c for c in ("ts", x_key, y_key) if c in frame.columns]].dropna(
+        subset=[x_key, y_key]
+    )
+    if pts.empty:
+        return _empty("No paired samples in the selected range.")
+
+    fig = go.Figure()
+    marker = dict(size=6, color=mx.color, opacity=0.6)
+    hover = (
+        f"{mx.label}: %{{x:.{mx.decimals}f}} {mx.unit}<br>"
+        f"{my.label}: %{{y:.{my.decimals}f}} {my.unit}<extra></extra>"
+    )
+    if color_by_time and "ts" in pts.columns:
+        t = pd.to_datetime(pts["ts"])
+        tnum = (t - t.min()).dt.total_seconds()
+        marker = dict(
+            size=6, color=tnum, colorscale="Viridis", opacity=0.75,
+            colorbar=dict(
+                title="time", tickmode="array",
+                tickvals=[float(tnum.min()), float(tnum.max())],
+                ticktext=[f"{t.min():%Y-%m-%d}", f"{t.max():%Y-%m-%d}"],
+            ),
+        )
+        hover = (
+            f"%{{customdata|%Y-%m-%d %H:%M}}<br>{mx.label}: %{{x:.{mx.decimals}f}} {mx.unit}"
+            f"<br>{my.label}: %{{y:.{my.decimals}f}} {my.unit}<extra></extra>"
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=pts[x_key], y=pts[y_key], mode="markers", name="samples",
+            marker=marker, customdata=pts["ts"] if "ts" in pts.columns else None,
+            hovertemplate=hover,
+        )
+    )
+    if slope is not None and intercept is not None:
+        xs = [float(pts[x_key].min()), float(pts[x_key].max())]
+        ys = [slope * xv + intercept for xv in xs]
+        fig.add_trace(
+            go.Scatter(
+                x=xs, y=ys, mode="lines", name="least-squares fit",
+                line=dict(color=OKABE_ITO[0], width=2, dash="dash"),
+                hovertemplate="fit<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        height=height, margin=dict(l=8, r=8, t=8, b=8),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis_title=label_with_unit(x_key), yaxis_title=label_with_unit(y_key),
+    )
+    if x_key in _AXIS_FROM_ZERO:
+        fig.update_xaxes(rangemode="tozero")
+    if y_key in _AXIS_FROM_ZERO:
+        fig.update_yaxes(rangemode="tozero")
+    return fig
+
+
+def correlation_heatmap(matrix: pd.DataFrame | None, *, height: int | None = None) -> go.Figure:
+    """Pairwise-correlation heatmap for 3+ measures (plan §B3).
+
+    Viridis scale fixed to ``[-1, 1]`` with the ``r`` value printed in
+    every cell, so the coefficient is legible as text and not conveyed by
+    color alone. ``matrix`` is the frame from
+    :func:`src.utils.correlate.compute_correlation`.
+    """
+    if matrix is None or matrix.empty:
+        return _empty("Not enough paired data for a correlation matrix.")
+    labels = [get(k).short_label if k in METRICS else str(k) for k in matrix.columns]
+    z = matrix.to_numpy(dtype=float)
+    text = [[("–" if pd.isna(v) else f"{v:.2f}") for v in row] for row in z]
+    fig = go.Figure(
+        go.Heatmap(
+            z=z, x=labels, y=labels, zmin=-1.0, zmax=1.0, colorscale="Viridis",
+            colorbar=dict(title="r"), text=text, texttemplate="%{text}",
+            hovertemplate="%{y} vs %{x}: r = %{z:.2f}<extra></extra>",
+        )
+    )
+    n = len(labels)
+    fig.update_layout(
+        height=height or (110 + 56 * n), margin=dict(l=8, r=8, t=8, b=8),
+        yaxis=dict(autorange="reversed"),
+    )
     return fig
 
 

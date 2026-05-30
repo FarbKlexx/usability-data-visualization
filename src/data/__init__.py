@@ -7,6 +7,7 @@ never touch I/O directly.
 
 from src.data.loaders import (
     available_metrics,
+    build_comparison_frame,
     choose_bucket_seconds,
     dashboard_tables_ready,
     feature_enabled,
@@ -37,6 +38,7 @@ __all__ = [
     "load_tracks",
     "load_particle_sizes",
     "available_metrics",
+    "build_comparison_frame",
     "choose_bucket_seconds",
     "shape_of",
     # interactivity / user-content loaders (plan §B)
