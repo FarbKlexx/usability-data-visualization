@@ -89,11 +89,11 @@ app.py              ── thin router: page_config + st.navigation + a cached D
 app_pages/*.py      ── one module per page; UI only (dashboard [hub], timeseries, map, comparison, devices, manage)
 src/
   components/       ── reusable UI primitives
-    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap)
+    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap)
     kpi.py          ──   metric_tile + aqi_tile
-    filter_bar.py   ──   global sensor + time-range toolbar (returns a FilterState)
+    filter_bar.py   ──   global sensor + time-range toolbar (returns a FilterState; group_by_type for the unified picker)
   data/
-    loaders.py      ──   @st.cache_data loaders; pages never do I/O directly
+    loaders.py      ──   @st.cache_data loaders; pages never do I/O directly (incl. load_routes + pure segment_routes for mobile trips)
   db/
     connection.py   ──   cached SQLAlchemy engine + URL resolution (secrets → env → local)
     queries.py      ──   read_sql + the sensor-table SQL-injection allowlist
@@ -138,7 +138,7 @@ Registered explicitly in `app.py`; each is read-only unless noted.
 
 | Page | Purpose | Write-back |
 |------|---------|-----------|
-| **Dashboard** *(hub)* | Plain-language air-quality status + CAQI (B1); pulled-up KPIs + headline PM trend, each linking to Time Series (B2); **verdict-first inline correlation** — \|r\| strength banding then a replace-in-place scatter/overlay/matrix chart (B3/B4); mini map | — |
+| **Dashboard** *(adaptive hub)* | One **type-grouped device picker** drives an adaptive view: plain-language CAQI status, then **one headline visual per device type** — PM trend + location marker for stationary/fixed (incl. the axis-swapped 781c), or a **segmented route map** (1 h-gap trips, points PM-coloured via Viridis) for mobile. Secondary functions in **tabs**: *Measures & data* (KPIs, measures, raw/clean, CSV), *Correlation* (verdict-first \|r\|), *Routes* (mobile: split-gap control, per-route PM chart) | — |
 | **Time Series** | Deep single-sensor exploration: aggregation bucket, rolling avg, raw/clean toggle, thresholds, CSV, bookmarkable URL state | annotations, reading flags, saved views *(feature-gated)* |
 | **Map** | Locations + mobile tracks, layer toggles, details-on-demand KPIs, "Explore in Time Series" hand-off | edit location (address + coords) |
 | **Comparison** | One measure across many sensors: grouped-bar averages + box-plot distributions + stats grid + CSV | — |
@@ -181,7 +181,9 @@ The categorical palette in the config mirrors `OKABE_ITO` in
   `load_timeseries(..., clean=True)` (sentinels removed *before*
   aggregation; pass `clean=False` for raw inspection),
   `load_devices()` (joined catalog + per-table coverage),
-  `load_comparison()`, `load_latest()`, plus the dashboard loaders
+  `load_comparison()`, `load_latest()`, `load_routes()` (mobile GPS track
+  → time-gap-segmented trips with PM, via the pure `segment_routes`),
+  plus the dashboard loaders
   (`load_annotations`, `load_reading_flags`, `load_thresholds`,
   `load_saved_views`, `load_feature_flags`, `feature_enabled`,
   `dashboard_tables_ready`).

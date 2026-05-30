@@ -63,6 +63,10 @@ def _label_map(pool: pd.DataFrame) -> dict[str, str]:
     return {r["table_name"]: device_label(r) for _, r in pool.iterrows()}
 
 
+# Type display order for the grouped picker (most data-rich kinds first).
+_TYPE_RANK = {"Stationary": 0, "Mobile": 1, "Specialty": 2, "External": 3, "POI": 4}
+
+
 def filter_bar(
     devices: pd.DataFrame,
     *,
@@ -71,13 +75,31 @@ def filter_bar(
     pool: pd.DataFrame | None = None,
     default_tables: list[str] | None = None,
     default_range: str = "7 d",
+    group_by_type: bool = False,
 ) -> FilterState:
-    """Render the toolbar and return the resolved :class:`FilterState`."""
+    """Render the toolbar and return the resolved :class:`FilterState`.
+
+    When ``group_by_type`` is set, the picker lists every device clustered
+    by ``ootype`` (Stationary, Mobile, …) with the type prefixed to each
+    label, so the kinds stay visible but unmixed (adaptive plan §A) — used
+    by the unified Dashboard picker.
+    """
     if pool is None:
         pool = devices[devices["has_data"]]
     pool = pool[pool["table_name"].notna()].copy()
+
+    if group_by_type and "ootype" in pool.columns:
+        pool = (
+            pool.assign(_rank=pool["ootype"].map(lambda t: _TYPE_RANK.get(t, 9)))
+            .sort_values(["_rank", "name"])
+            .drop(columns="_rank")
+        )
+
     options = list(pool["table_name"])
     labels = _label_map(pool)
+    if group_by_type and "ootype" in pool.columns:
+        type_by_table = dict(zip(pool["table_name"], pool["ootype"]))
+        labels = {t: f"{type_by_table.get(t, 'Other')} · {lbl}" for t, lbl in labels.items()}
 
     k_sensors = f"{prefix}_sensors"
     k_range = f"{prefix}_range"

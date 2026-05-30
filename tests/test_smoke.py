@@ -206,6 +206,44 @@ def test_correlation_verdict_lay_bands_and_sign() -> None:
     assert {correlation_verdict(v).badge for v in (0.1, 0.5, 0.9)} == {"gray", "blue", "violet"}
 
 
+# --- Route segmentation (adaptive device view) ------------------------------
+
+
+def test_segment_routes_splits_dedups_and_drops_singletons() -> None:
+    import pandas as pd
+
+    from src.data.loaders import segment_routes
+
+    base = pd.Timestamp("2025-01-01 00:00:00")
+    rows = []
+    # Trip A: 3 points 10 min apart.
+    for i in range(3):
+        rows.append({"ts": base + pd.Timedelta(minutes=10 * i), "lon": 8.0 + i, "lat": 52.0, "pm2_5": 5.0})
+    # A duplicate row (same ts as A's first point) — the A3 artefact.
+    rows.append({"ts": base, "lon": 8.0, "lat": 52.0, "pm2_5": 5.0})
+    # Trip B: 2 points, starting 3 h later (gap > 1 h → new route).
+    for i in range(2):
+        rows.append({"ts": base + pd.Timedelta(hours=3, minutes=5 * i), "lon": 9.0 + i, "lat": 52.0, "pm2_5": 7.0})
+    # A lone point 5 h after that (its own would-be route) — must be dropped.
+    rows.append({"ts": base + pd.Timedelta(hours=8), "lon": 10.0, "lat": 52.0, "pm2_5": 9.0})
+
+    out = segment_routes(pd.DataFrame(rows), gap_seconds=3600, min_points=2)
+    # Two real trips survive; the singleton is dropped; the duplicate collapsed.
+    assert sorted(out["route_id"].unique().tolist()) == [0, 1]
+    assert (out["route_id"] == 0).sum() == 3  # trip A, duplicate removed
+    assert (out["route_id"] == 1).sum() == 2  # trip B
+    assert len(out) == 5
+
+
+def test_segment_routes_empty_frame_has_route_id_column() -> None:
+    import pandas as pd
+
+    from src.data.loaders import segment_routes
+
+    out = segment_routes(pd.DataFrame(columns=["ts", "lon", "lat", "pm2_5"]))
+    assert "route_id" in out.columns and out.empty
+
+
 # --- CAQI band --------------------------------------------------------------
 
 
@@ -272,3 +310,18 @@ def test_allowlist_blocks_unknown_tables(db_or_skip) -> None:
     assert not is_sensor_table("pg_user; DROP TABLE x")
     with pytest.raises(ValueError):
         safe_sensor_table("definitely_not_a_table")
+
+
+def test_load_routes_segments_mobile_track(db_or_skip) -> None:
+    from src.data import load_routes
+
+    # SENSORpi m01 is a mobile sensor with a real GPS track (plan §C).
+    routes = load_routes("sensor_b827eb0fae5c", gap_seconds=3600, min_points=2)
+    assert not routes.empty
+    assert {"ts", "lon", "lat", "pm2_5", "route_id"}.issubset(routes.columns)
+    # Every surviving route has at least min_points; ids are gap-free 0..N.
+    sizes = routes.groupby("route_id").size()
+    assert (sizes >= 2).all()
+    assert routes["route_id"].max() == routes["route_id"].nunique() - 1
+    # A stationary sensor has no geometry → empty (the loader returns a stub).
+    assert load_routes("sensor_000aeb8337ac").empty

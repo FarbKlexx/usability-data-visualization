@@ -329,6 +329,88 @@ def build_location_markers(loc: pd.DataFrame, band_lookup: dict | None = None) -
     return pd.DataFrame(rows)
 
 
+def route_map(
+    routes: pd.DataFrame,
+    *,
+    height: int = 560,
+    selected_route: int | None = None,
+    color_metric: str = "pm2_5",
+) -> go.Figure:
+    """Mobile routes on a map (adaptive plan §B2).
+
+    Two complementary, separately-labelled channels (color is never the
+    only carrier):
+
+    * **Trip identity** — each ``route_id`` is its own line. With few
+      routes (≤ 8) each gets a distinct categorical colour + a "Route N"
+      legend entry; with many, lines are drawn in neutral grey (a legend
+      of 28 trips would defeat Hick's law) and the *selected* route is
+      highlighted. Either way each trip is a separate path.
+    * **Pollution along the path** — the points are coloured by PM value
+      on the sequential **Viridis** scale with a colourbar legend and a
+      value tooltip, so the air-quality payoff of a mobile sensor reads
+      at a glance.
+
+    ``routes`` is the frame from :func:`src.data.load_routes`
+    (``ts, lon, lat, pm2_5, route_id``). ``selected_route`` highlights one
+    trip and scopes the PM points to it.
+    """
+    if routes is None or routes.empty:
+        return _empty("No routes in the selected range.")
+
+    metric = get(color_metric) if color_metric in METRICS else None
+    route_ids = list(dict.fromkeys(routes["route_id"]))
+    legend = len(route_ids) <= 8  # distinct colours + legend only when few
+    fig = go.Figure()
+    lats: list[float] = []
+    lons: list[float] = []
+
+    for i, rid in enumerate(route_ids):
+        seg = routes[routes["route_id"] == rid]
+        lats += list(seg["lat"]); lons += list(seg["lon"])
+        is_sel = selected_route == rid
+        dim = selected_route is not None and not is_sel
+        fig.add_trace(
+            go.Scattermap(
+                lat=seg["lat"], lon=seg["lon"], mode="lines",
+                line=dict(width=3 if is_sel else 1.6,
+                          color=(OKABE_ITO[6] if is_sel else (track_palette(i) if legend else "#8A8F98"))),
+                opacity=0.25 if dim else 0.9,
+                name=f"Route {i + 1}", hoverinfo="name", showlegend=legend,
+            )
+        )
+
+    pts = routes if selected_route is None else routes[routes["route_id"] == selected_route]
+    if metric is not None and color_metric in pts.columns and pts[color_metric].notna().any():
+        fig.add_trace(
+            go.Scattermap(
+                lat=pts["lat"], lon=pts["lon"], mode="markers",
+                marker=dict(
+                    size=7, color=pts[color_metric], colorscale="Viridis", showscale=True,
+                    colorbar=dict(title=f"{metric.short_label}<br>{metric.unit}"),
+                ),
+                customdata=pts[[color_metric]].to_numpy(),
+                hovertemplate=f"{metric.label}: %{{customdata[0]:.{metric.decimals}f}} {metric.unit}<extra></extra>",
+                name=metric.label, showlegend=False,
+            )
+        )
+
+    if lats:
+        center = dict(lat=sum(lats) / len(lats), lon=sum(lons) / len(lons))
+        span = max(max(lats) - min(lats), max(lons) - min(lons), 0.005)
+        zoom = 5 if span > 3 else 7 if span > 0.5 else 10 if span > 0.05 else 13
+    else:
+        center, zoom = dict(lat=52.3, lon=8.9), 6
+
+    fig.update_layout(
+        height=height, margin=dict(l=0, r=0, t=0, b=0),
+        map=dict(style="open-street-map", center=center, zoom=zoom),
+        legend=dict(orientation="h", yanchor="top", y=0.99, xanchor="left", x=0.01,
+                    bgcolor="rgba(255,255,255,0.8)"),
+    )
+    return fig
+
+
 def particle_size_bars(df: pd.DataFrame, *, height: int = 340) -> go.Figure:
     """Particle-size distribution as grouped bars (plan §3 candidate 8).
 

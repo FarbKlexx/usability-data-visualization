@@ -471,6 +471,78 @@ def load_tracks(table: str) -> pd.DataFrame:
     return df
 
 
+# --- Mobile routes (track segmentation) ------------------------------------
+
+
+def segment_routes(
+    points: pd.DataFrame, gap_seconds: int = 3600, min_points: int = 2
+) -> pd.DataFrame:
+    """Split an ordered GPS point frame into trips by a time gap (plan §C).
+
+    Pure (no DB) so it is unit-testable. Steps: drop the A3 duplicate-row
+    artefact (identical ``ts``), order by ``ts``, then start a new
+    ``route_id`` whenever the gap to the previous point exceeds
+    ``gap_seconds``. Routes with fewer than ``min_points`` points are
+    dropped (a lone point is not a path) and the surviving ids are
+    renumbered consecutively from 0 so the UI can label them "Route 1…N".
+
+    ``points`` must carry a ``ts`` column; any other columns (lon/lat/PM)
+    pass through untouched. Returns a copy with an added ``route_id``.
+    """
+    cols = list(points.columns) + ["route_id"]
+    if points.empty:
+        return pd.DataFrame(columns=cols)
+    df = points.copy()
+    df["ts"] = pd.to_datetime(df["ts"])
+    df = df.drop_duplicates(subset=["ts"]).sort_values("ts").reset_index(drop=True)
+    raw_id = (df["ts"].diff() > pd.Timedelta(seconds=gap_seconds)).cumsum()
+    sizes = raw_id.groupby(raw_id).transform("size")
+    df = df[sizes >= min_points].copy()
+    # Renumber the surviving routes 0..k so labels are gap-free.
+    df["route_id"] = pd.factorize(raw_id[sizes >= min_points])[0]
+    return df.reset_index(drop=True)
+
+
+@st.cache_data(ttl=3600, show_spinner="Segmenting routes…")
+def load_routes(
+    table: str,
+    gap_seconds: int = 3600,
+    min_points: int = 2,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> pd.DataFrame:
+    """A mobile sensor's GPS track split into trips (plan §C/§E).
+
+    Reads the de-duplicated, time-ordered points (optionally within a
+    ``[start, end)`` window) carrying PM2.5 (sentinels cleaned, so the
+    saturation ceiling never skews the colour scale), then segments them
+    with :func:`segment_routes`. Columns: ``ts, lon, lat, pm2_5,
+    route_id``. Empty if the table has no geometry (e.g. a stationary
+    sensor).
+    """
+    cols = ["ts", "lon", "lat", "pm2_5", "route_id"]
+    safe = safe_sensor_table(table)
+    if "pos" not in _columns_of(table):
+        return pd.DataFrame(columns=cols)
+    pm_col = {m.key: c for m, c in available_metrics(table)}.get("pm2_5")
+    pm_select = f', {_clean_expr(pm_col, get("pm2_5"))} AS pm2_5' if pm_col else ""
+    where = ["pos IS NOT NULL"]
+    params: dict = {}
+    if start is not None and end is not None:
+        where.append("ts >= :start AND ts < :end")
+        params["start"], params["end"] = start, end
+    df = read_sql(
+        f"SELECT DISTINCT ts, ST_X(pos) AS lon, ST_Y(pos) AS lat{pm_select} "
+        f"FROM {safe} WHERE {' AND '.join(where)} ORDER BY ts",
+        params,
+    )
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    if "pm2_5" not in df.columns:
+        df["pm2_5"] = pd.NA
+    return segment_routes(df, gap_seconds=gap_seconds, min_points=min_points)
+
+
 # Shape-B (hi-res) particle size classes: column -> display label.
 _PARTICLE_MASS = (("mass_pm1_0", "PM1.0"), ("mass_pm2_5", "PM2.5"), ("mass_pm4", "PM4"), ("mass_pm10", "PM10"))
 _PARTICLE_NUMBER = (
