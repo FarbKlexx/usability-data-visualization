@@ -58,4 +58,28 @@ PAGES = [
 ]
 
 page = st.navigation(PAGES, position="top")
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _db_error() -> str | None:
+    """Cached health check so every rerun doesn't reconnect."""
+    from src.db.connection import check_connection
+
+    return check_connection()
+
+
+db_error = _db_error()
+if db_error:
+    st.error(
+        "**The dashboard can't reach its database.**\n\n"
+        "This app reads an air-quality PostgreSQL + PostGIS database. "
+        "On Streamlit Community Cloud, set a `DATABASE_URL` secret pointing "
+        "at a hosted Postgres+PostGIS instance (see `DEPLOY.md`). Locally, "
+        "start the bundled container with `docker compose up -d`.",
+        icon=":material/database_off:",
+    )
+    with st.expander("Technical detail"):
+        st.code(db_error)
+    st.stop()
+
 page.run()

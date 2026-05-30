@@ -33,3 +33,7 @@ venv/
 # Build artefacts
 dist/
 build/
+
+# Deploy data dumps (large; load into hosted DB, do not commit)
+deploy/*.sql
+deploy/*.dump
