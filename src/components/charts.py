@@ -438,55 +438,6 @@ def normalized_overlay(
     return fig
 
 
-def dual_axis_lines(
-    df: pd.DataFrame, key_a: str, key_b: str, *, height: int = 420
-) -> go.Figure:
-    """Two measures in their *real* units on a left / right axis (plan §B2).
-
-    Honest-use caveat: independent axes can be slid to make any two series
-    appear to track, so this view is for reading absolute values while
-    eyeballing co-movement — the scatter view (:func:`scatter_correlation`)
-    is what actually quantifies the relationship. Each axis keeps its own
-    honest range (concentrations from zero; signed measures free).
-    """
-    present = [k for k in (key_a, key_b) if k in df.columns and df[k].notna().any()]
-    if df.empty or len(present) < 2:
-        return _empty("Need two measures with data in this range.")
-
-    ma, mb = get(key_a), get(key_b)
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=df["ts"], y=df[key_a], name=ma.label, mode="lines", yaxis="y",
-            line=dict(color=ma.color, width=2), connectgaps=False,
-            hovertemplate=_hovertemplate(ma),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["ts"], y=df[key_b], name=mb.label, mode="lines", yaxis="y2",
-            line=dict(color=mb.color, width=2), connectgaps=False,
-            hovertemplate=_hovertemplate(mb),
-        )
-    )
-    fig.update_layout(
-        height=height, margin=dict(l=8, r=8, t=8, b=8), hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        xaxis_title=None,
-        yaxis=dict(
-            title=label_with_unit(key_a), title_font=dict(color=ma.color),
-            tickfont=dict(color=ma.color),
-            rangemode="tozero" if key_a in _AXIS_FROM_ZERO else "normal",
-        ),
-        yaxis2=dict(
-            title=label_with_unit(key_b), title_font=dict(color=mb.color),
-            tickfont=dict(color=mb.color), overlaying="y", side="right",
-            rangemode="tozero" if key_b in _AXIS_FROM_ZERO else "normal",
-        ),
-    )
-    return fig
-
-
 def scatter_correlation(
     frame: pd.DataFrame,
     x_key: str,

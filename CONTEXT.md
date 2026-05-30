@@ -1,4 +1,24 @@
 # Project Context for Coding Agent
+
+## Usability — Definition & Goals (ISO 9241-11)
+
+- **Usability =** the extent to which specified users achieve specified goals with **effectiveness, efficiency, and satisfaction** in a specified **context of use** (ISO 9241-11).
+  - **Effectiveness** — can the user reach the goal at all (accuracy & completeness)?
+  - **Efficiency** — does the user reach it with minimal effort/resources?
+  - **Satisfaction** — does the user reach it comfortably, without frustration?
+- **Context of use** = users + goals + tasks + resources + environment. Design for *our* users and *their* context — know who they are before deciding what to show.
+- **useful = utility + usability** (Nielsen). Utility = does it have the features the user needs; usability = how easy/pleasant those features are to use. A feature that exists but is unusable is worthless; an easy UI for the wrong feature is equally worthless.
+- **Usability ≠ UX.** Usability is effectiveness/efficiency/satisfaction *during* a task. **User Experience (UX)** is the whole perception **before, during, and after** use — emotions, trust, aesthetics, brand. Good usability is necessary but not sufficient for good UX.
+- **Nielsen's 5 quality components:** Learnability, Efficiency, Memorability, Errors (few, recoverable), Satisfaction.
+
+## User-Centered Design (Process)
+
+- Base design on an explicit understanding of **users, tasks, and environments**; involve users throughout; refine via user-centered evaluation; iterate.
+- **Iterate:** design → test → revise, at every step. Test early — deferring tests to the end makes structural problems unfixable.
+- **~5 users** per test round typically surfaces the most important problems; many small tests beat one big study.
+- **You are not the user.** Consistent problems are the system's fault, not the user's — but users aren't designers either, so observe behavior rather than only asking.
+- **User testing ≠ focus groups.** Testing observes whether something *works*; focus groups only reveal what people *say* they want.
+
 ## Cognitive Foundations
 
 - **Miller's Law (7±2):** Working memory is limited. Don't display more than ~7 KPIs/widgets at the same time. Logical chunking (grouping related metrics) is mandatory.
@@ -22,6 +42,38 @@
 6. Easy reversal of actions (undo, "Reset filter", bookmarks)
 7. User in control (no auto-reload in the middle of an analysis)
 8. Reduce short-term memory load (show active filters visibly, don't require them to be remembered)
+
+## Nielsen's 10 Usability Heuristics
+
+Companion to Shneiderman's 8 above — broader rules of thumb; several overlap (mapping noted where useful).
+
+1. **Visibility of system status** — show state clearly and quickly (≈ Shneiderman #3).
+2. **Match the real world** — users' language and familiar concepts.
+3. **User control & freedom** — undo, redo, cancel; clearly marked exits (≈ #6).
+4. **Consistency & standards** — follow conventions, stay uniform (≈ #1).
+5. **Error prevention** — stop problems before they happen (≈ #5).
+6. **Recognition over recall** — make options visible; don't force memory (≈ #8).
+7. **Flexibility & efficiency** — shortcuts and customization for power users (≈ #2).
+8. **Aesthetic & minimalist design** — show only what's necessary.
+9. **Help users recognize, diagnose, recover from errors** — plain-language message + a concrete solution.
+10. **Help & documentation** — easy to find, concise, task-focused.
+
+## ISO 9241-110 Interaction Principles
+
+Seven dialogue principles that underpin usable interaction:
+
+- **Task appropriateness** (Aufgabenangemessenheit) — supports the task without unnecessary steps.
+- **Self-descriptiveness** (Selbstbeschreibungsfähigkeit) — at each point it is clear what is happening and what to do next.
+- **Conformity with expectations** (Erwartungskonformität) — consistent with conventions and the user's mental model.
+- **Learnability** (Erlernbarkeit) — easy to learn and to re-learn after a break.
+- **Controllability** (Steuerbarkeit) — user can start, pause, reverse, and direct the interaction.
+- **Robustness against use errors** (Robustheit gegen Benutzungsfehler) — tolerant; helps avoid and recover from mistakes.
+- **User engagement** (Benutzerbindung) — motivating, trustworthy, pleasant to use.
+
+## The 5Es of Usability (Quesenbery)
+
+- The five dimensions: **Effective, Efficient, Engaging, Error-tolerant, Easy to learn.**
+- **Weight them by audience:** occasional/lay users prize *easy to learn, error-tolerant, engaging*; expert/frequent users prize *effective, efficient*. For a lay-facing dashboard, lean toward easy-to-learn and error tolerance without sacrificing effectiveness.
 
 ## Direct Manipulation
 
@@ -63,6 +115,26 @@
 - No hidden defaults that manipulate data (e.g., truncated Y-axes that exaggerate trends).
 - Filter reset must be easily reachable (no "Roach Motel").
 - Represent data honestly — no misleading scales or axis breaks without a notice.
+
+## Accessibility — WCAG 2.2 (POUR) & Legal Requirements
+
+- **POUR — the four WCAG 2.2 principles:**
+  - **Perceivable** — content must be graspable by the senses; text alternatives for non-text content; don't rely on a single sense (pairs with "color is never the only channel").
+  - **Operable** — everything reachable by keyboard; enough time; no interaction that is impossible for some users.
+  - **Understandable** — plain language; predictable behavior; helpful error messages.
+  - **Robust** — standards-compliant markup that works with current and future assistive tech (screen readers).
+- **Curb-cut effect** — accessible design improves usability for *everyone* (captions in noisy rooms, high contrast in sunlight). Accessibility is not an add-on bolted on at the end.
+- **Legal mandate (DE/EU):** EU directives 2016/2102 and 2019/882 (European Accessibility Act) → national **BITV 2.0** (public bodies) and **BFSG** (products/services on the German market must be accessible). **EN 301 549** is the technical conformance checklist; meeting it gives presumption of conformity. Non-compliance can mean fines up to a sales ban.
+- **Bottom line:** good usability *begins* with accessibility — without it there is no good usability.
+
+### Accessibility Checklist (WCAG 2.2)
+
+1. Full keyboard operability with a visible focus indicator.
+2. Text alternatives / ARIA labels for every non-text control and every chart.
+3. Sufficient color contrast; never color-only signaling (also pattern/label/text/position).
+4. Predictable, consistent navigation and behavior across all pages.
+5. Plain-language labels and error messages that include a suggested fix.
+6. Standards-compliant markup that screen readers can parse.
 
 ## Practical Checklist for the Coding Agent
 

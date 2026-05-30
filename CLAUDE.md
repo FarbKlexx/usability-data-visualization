@@ -86,10 +86,10 @@ compatible interpreter on first `uv sync` if none is available.
 
 ```
 app.py              ── thin router: page_config + st.navigation + a cached DB-health guard
-app_pages/*.py      ── one module per page; UI only (overview, timeseries, map, comparison, correlation, devices, manage)
+app_pages/*.py      ── one module per page; UI only (dashboard [hub], timeseries, map, comparison, devices, manage)
 src/
   components/       ── reusable UI primitives
-    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/particle/coverage + correlation: normalized_overlay/dual_axis_lines/scatter_correlation/correlation_heatmap)
+    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap)
     kpi.py          ──   metric_tile + aqi_tile
     filter_bar.py   ──   global sensor + time-range toolbar (returns a FilterState)
   data/
@@ -102,8 +102,8 @@ src/
     palette.py      ──   Okabe-Ito + Viridis tokens
     metrics.py      ──   the metric registry (single source of truth: labels/units/ranges/sentinels)
     clean.py        ──   saturation-sentinel cleaning + disclosure strings
-    aqi.py          ──   EU CAQI band classification (derived)
-    correlate.py    ──   normalize_frame + Pearson/Spearman compute_correlation (scipy-free: Spearman = Pearson on ranks)
+    aqi.py          ──   EU CAQI band classification (derived) + plain-language quality word/advice (hub status)
+    correlate.py    ──   normalize_frame + Pearson/Spearman compute_correlation (scipy-free) + lay |r| correlation_verdict (hub)
     state.py        ──   cross-filter window + sensor hand-off + URL query-param sharing
     text.py         ──   escape_md (markdown-injection guard for user text)
     accessibility.py──   a11y helpers (placeholder)
@@ -138,11 +138,10 @@ Registered explicitly in `app.py`; each is read-only unless noted.
 
 | Page | Purpose | Write-back |
 |------|---------|-----------|
-| **Overview** | Headline snapshot: 5 KPIs + CAQI tile, PM2.5/PM10 line, mini map | — |
+| **Dashboard** *(hub)* | Plain-language air-quality status + CAQI (B1); pulled-up KPIs + headline PM trend, each linking to Time Series (B2); **verdict-first inline correlation** — \|r\| strength banding then a replace-in-place scatter/overlay/matrix chart (B3/B4); mini map | — |
 | **Time Series** | Deep single-sensor exploration: aggregation bucket, rolling avg, raw/clean toggle, thresholds, CSV, bookmarkable URL state | annotations, reading flags, saved views *(feature-gated)* |
-| **Map** | Locations + mobile tracks, layer toggles, details-on-demand, "Explore in Time Series" hand-off | edit location (address + coords) |
+| **Map** | Locations + mobile tracks, layer toggles, details-on-demand KPIs, "Explore in Time Series" hand-off | edit location (address + coords) |
 | **Comparison** | One measure across many sensors: grouped-bar averages + box-plot distributions + stats grid + CSV | — |
-| **Correlation** | Many measures on *one* sensor: scatter + Pearson/Spearman r, normalized-overlay (shape), dual-axis, correlation-matrix heatmap (3+), lag offset, CSV + bookmarkable URL state | — |
 | **Devices & Data Quality** | Device catalog, coverage timeline, honest data-quality audit | edit device metadata |
 | **Manage** | Admin surface: feature-flag toggles, persisted thresholds, saved-view apply/delete | feature flags, thresholds, views |
 

@@ -185,13 +185,25 @@ def test_compute_correlation_lag_shifts_second_measure() -> None:
     assert lagged.lag == 1
 
 
-def test_interpret_r_words_and_undefined() -> None:
-    from src.utils.correlate import interpret_r
+def test_correlation_verdict_lay_bands_and_sign() -> None:
+    from src.utils.correlate import correlation_verdict
 
-    assert interpret_r(0.95) == "very strong positive"
-    assert interpret_r(-0.4) == "moderate negative"
-    assert interpret_r(0.02) == "negligible"
-    assert interpret_r(None) == "undefined"
+    # Cut-offs (plan §B3): <0.3 no/weak, 0.3–0.7 moderate, >0.7 strong.
+    assert correlation_verdict(0.95).label == "Strong positive"
+    assert correlation_verdict(0.95).arrow == "↑"
+    assert correlation_verdict(-0.45).label == "Moderate negative"
+    assert correlation_verdict(-0.45).arrow == "↓"
+    # Boundaries: 0.3 is moderate (inclusive lower), 0.7 is moderate (inclusive upper).
+    assert correlation_verdict(0.3).level == 1
+    assert correlation_verdict(0.7).level == 1
+    assert correlation_verdict(0.71).level == 2
+    # Too weak to trust the sign -> no direction implied, neutral badge.
+    weak = correlation_verdict(0.05)
+    assert weak.level == 0 and weak.arrow == "" and weak.label == "No / weak link"
+    # Missing r is explicit, never a misleading 0.
+    assert correlation_verdict(None).label == "Not enough data"
+    # Strength badges are a neutral ramp (never red/green = good/bad).
+    assert {correlation_verdict(v).badge for v in (0.1, 0.5, 0.9)} == {"gray", "blue", "violet"}
 
 
 # --- CAQI band --------------------------------------------------------------
@@ -212,6 +224,15 @@ def test_caqi_bands_have_distinct_icons() -> None:
 
     icons = [b.icon for b in CAQI_BANDS]
     assert len(set(icons)) == len(icons)
+
+
+def test_caqi_bands_carry_plain_language() -> None:
+    # The hub leads with words, not a chart: every band needs a quality
+    # word + a non-empty advice sentence, best→worst monotonic.
+    from src.utils.aqi import CAQI_BANDS
+
+    assert [b.quality for b in CAQI_BANDS] == ["Good", "Fair", "Moderate", "Poor", "Very poor"]
+    assert all(b.advice.strip() for b in CAQI_BANDS)
 
 
 # --- DB-gated integration ---------------------------------------------------

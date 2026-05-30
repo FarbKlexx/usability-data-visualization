@@ -12,9 +12,11 @@ reusable. Three small responsibilities:
   ``n`` for two measures, or a full correlation matrix for three or more
   (§B3). Supports a lag offset so the user can probe whether one measure
   *leads* another (§D).
-* :func:`interpret_r` — words for a coefficient, so the relationship is
-  conveyed by text, not by the number alone (color/number is never the
-  only channel).
+* :func:`correlation_verdict` — a lay-friendly reading of a coefficient:
+  a 3-band strength (no/weak · moderate · strong, by ``|r|``) plus a
+  signed direction, carried by **word + arrow** (shape/text), with a
+  neutral badge colour for the strength band — so the meaning never
+  rests on colour alone (consolidation plan §B3).
 
 Correlation uses pandas' own Pearson ``corr`` (pure numpy). Spearman ρ is
 computed as Pearson on the column ranks — mathematically identical — so
@@ -151,24 +153,47 @@ def compute_correlation(
     return CorrelationResult(method, keys, n=int(len(sub)), lag=lag, matrix=matrix)
 
 
-def interpret_r(r: float | None) -> str:
-    """Plain-words strength + direction for a coefficient (text channel).
+@dataclass(frozen=True)
+class CorrelationVerdict:
+    """Lay-friendly reading of a coefficient (consolidation plan §B3).
 
-    Returns e.g. ``"strong positive"`` / ``"weak negative"`` /
-    ``"negligible"``; ``"undefined"`` when ``r`` is missing (e.g. a
-    constant series). Bands follow the common Cohen-style convention.
+    ``level`` is the strength band (``-1`` undefined, ``0`` no/weak,
+    ``1`` moderate, ``2`` strong); ``badge`` is a neutral Streamlit badge
+    colour for that band (correlation is not "good"/"bad", so the ramp is
+    grey→blue→violet, never red/green). ``arrow`` (``↑``/``↓``) and the
+    worded ``label`` carry the sign so colour is never the only channel.
+    """
+
+    r: float | None
+    level: int
+    strength: str  # "no / weak" | "moderate" | "strong" | "—"
+    direction: str  # "positive" | "negative" | ""
+    arrow: str  # "↑" | "↓" | ""
+    label: str  # full phrase, e.g. "Strong positive"
+    badge: str  # Streamlit badge colour for the strength band
+
+
+def correlation_verdict(r: float | None) -> CorrelationVerdict:
+    """Band a coefficient into a plain-language verdict (plan §B3).
+
+    Lay 3-band cut-offs on ``|r|``: **no/weak** below 0.3, **moderate**
+    from 0.3 to 0.7 inclusive, **strong** above 0.7. For a missing ``r``
+    (a constant series or too few samples) the verdict is an explicit
+    "Not enough data" rather than a misleading 0.
     """
     if r is None or pd.isna(r):
-        return "undefined"
+        return CorrelationVerdict(None, -1, "—", "", "", "Not enough data", "gray")
     magnitude = abs(r)
-    if magnitude < 0.1:
-        return "negligible"
     if magnitude < 0.3:
-        strength = "weak"
-    elif magnitude < 0.5:
-        strength = "moderate"
-    elif magnitude < 0.7:
-        strength = "strong"
+        level, strength, badge = 0, "no / weak", "gray"
+    elif magnitude <= 0.7:
+        level, strength, badge = 1, "moderate", "blue"
     else:
-        strength = "very strong"
-    return f"{strength} {'positive' if r > 0 else 'negative'}"
+        level, strength, badge = 2, "strong", "violet"
+    direction = "positive" if r > 0 else "negative"
+    if level == 0:  # too weak to trust the sign — don't imply a direction
+        return CorrelationVerdict(float(r), level, strength, direction, "", "No / weak link", badge)
+    arrow = "↑" if r > 0 else "↓"
+    return CorrelationVerdict(
+        float(r), level, strength, direction, arrow, f"{strength.capitalize()} {direction}", badge
+    )

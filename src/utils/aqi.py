@@ -43,6 +43,8 @@ class CAQIBand:
     icon: str  # Material icon — distinct glyph per band (shape channel)
     pm2_5_hi: float  # inclusive upper bound for PM2.5 (µg/m³)
     pm10_hi: float  # inclusive upper bound for PM10 (µg/m³)
+    quality: str  # plain-language air-quality word (hub status, consolidation §B1)
+    advice: str  # one-sentence lay explanation / what-it-means
 
     @property
     def range_label(self) -> str:
@@ -56,11 +58,16 @@ class CAQIBand:
 # Ordinal severity ramp. Cool→warm reinforces severity, but the icon and
 # label carry the meaning so red/green confusion never loses information.
 CAQI_BANDS: tuple[CAQIBand, ...] = (
-    CAQIBand(0, "Very low", _C["bluish_green"], ":material/sentiment_very_satisfied:", 15.0, 25.0),
-    CAQIBand(1, "Low", _C["yellow"], ":material/sentiment_satisfied:", 30.0, 50.0),
-    CAQIBand(2, "Medium", _C["orange"], ":material/sentiment_neutral:", 55.0, 90.0),
-    CAQIBand(3, "High", _C["vermillion"], ":material/sentiment_dissatisfied:", 110.0, 180.0),
-    CAQIBand(4, "Very high", "#7D2E68", ":material/sentiment_very_dissatisfied:", math.inf, math.inf),
+    CAQIBand(0, "Very low", _C["bluish_green"], ":material/sentiment_very_satisfied:", 15.0, 25.0,
+             quality="Good", advice="Air quality is good — particulate pollution is very low."),
+    CAQIBand(1, "Low", _C["yellow"], ":material/sentiment_satisfied:", 30.0, 50.0,
+             quality="Fair", advice="Air quality is fair — particulate pollution is low."),
+    CAQIBand(2, "Medium", _C["orange"], ":material/sentiment_neutral:", 55.0, 90.0,
+             quality="Moderate", advice="Moderate pollution — sensitive groups should take it easy outdoors."),
+    CAQIBand(3, "High", _C["vermillion"], ":material/sentiment_dissatisfied:", 110.0, 180.0,
+             quality="Poor", advice="High pollution — consider limiting prolonged outdoor exertion."),
+    CAQIBand(4, "Very high", "#7D2E68", ":material/sentiment_very_dissatisfied:", math.inf, math.inf,
+             quality="Very poor", advice="Very high pollution — avoid prolonged outdoor exertion."),
 )
 
 

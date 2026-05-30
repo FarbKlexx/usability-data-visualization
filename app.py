@@ -25,8 +25,8 @@ st.set_page_config(
 
 PAGES = [
     st.Page(
-        "app_pages/overview.py",
-        title="Overview",
+        "app_pages/dashboard.py",
+        title="Dashboard",
         icon=":material/dashboard:",
         default=True,
     ),
@@ -44,11 +44,6 @@ PAGES = [
         "app_pages/comparison.py",
         title="Comparison",
         icon=":material/compare_arrows:",
-    ),
-    st.Page(
-        "app_pages/correlation.py",
-        title="Correlation",
-        icon=":material/scatter_plot:",
     ),
     st.Page(
         "app_pages/devices.py",
