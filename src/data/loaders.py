@@ -232,13 +232,22 @@ def sensors_with_data() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def load_latest(table: str) -> tuple[pd.DataFrame, pd.Timestamp | None]:
-    """Latest reading per metric + 24 h trend (KPI tiles, plan §6.2).
+def load_latest(
+    table: str, baseline_seconds: int | None = 86400
+) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+    """Latest reading per metric + a trend delta (KPI tiles, plan §6.2).
 
     Returns ``(long_df, latest_ts)`` where ``long_df`` has one row per
     available metric with columns ``metric, value, delta`` (delta =
-    latest − mean of the preceding 24 h, sentinels excluded). Empty frame
-    if the table has no rows.
+    latest − mean over the baseline window, sentinels excluded). Empty
+    frame if the table has no rows.
+
+    ``baseline_seconds`` sets the trend baseline window ending at the
+    latest reading: e.g. ``86400`` = vs. the previous 24 h (default),
+    ``604800`` = vs. the previous 7 d. ``None`` compares against the mean
+    of **all** earlier readings (used for the "All" range). The caller is
+    responsible for labelling the window so the displayed trend stays
+    honest.
     """
     safe = safe_sensor_table(table)
     pairs = available_metrics(table)
@@ -247,8 +256,13 @@ def load_latest(table: str) -> tuple[pd.DataFrame, pd.Timestamp | None]:
 
     base_cols = ", ".join(f'avg({_clean_expr(col, m, alias="t")}) AS {m.key}_base' for m, col in pairs)
 
-    # latest = newest row (sentinels nulled); base = mean of the prior 24 h
-    # (sentinels excluded). delta = latest − base gives the KPI trend arrow.
+    # latest = newest row (sentinels nulled); base = mean over the baseline
+    # window (sentinels excluded). delta = latest − base = the KPI trend arrow.
+    if baseline_seconds is None:
+        base_where, params = "t.ts < l.ts", {}
+    else:
+        base_where = "t.ts >= l.ts - (:base_secs * interval '1 second') AND t.ts < l.ts"
+        params = {"base_secs": int(baseline_seconds)}
     sql = f"""
         WITH latest AS (
             SELECT ts, {", ".join(f'{_clean_expr(col, m)} AS {m.key}' for m, col in pairs)}
@@ -257,11 +271,11 @@ def load_latest(table: str) -> tuple[pd.DataFrame, pd.Timestamp | None]:
         base AS (
             SELECT {base_cols}
             FROM {safe} t, latest l
-            WHERE t.ts >= l.ts - interval '24 hours' AND t.ts < l.ts
+            WHERE {base_where}
         )
         SELECT latest.*, base.* FROM latest CROSS JOIN base
     """
-    df = read_sql(sql)
+    df = read_sql(sql, params)
     if df.empty:
         return pd.DataFrame(columns=["metric", "value", "delta"]), None
 
@@ -273,6 +287,59 @@ def load_latest(table: str) -> tuple[pd.DataFrame, pd.Timestamp | None]:
         base = row.get(f"{m.key}_base")
         value = None if pd.isna(value) else float(value)
         delta = None if (value is None or pd.isna(base)) else value - float(base)
+        records.append({"metric": m.key, "value": value, "delta": delta})
+    return pd.DataFrame.from_records(records), latest_ts
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_range_summary(
+    table: str, start: datetime, end: datetime
+) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+    """Per-metric **mean over [start, end)** + a period-over-period delta.
+
+    The dashboard KPI strip uses this so the tiles reflect the selected
+    time range (a 7-day pick shows the 7-day average), not a fixed
+    snapshot. ``value`` is the sentinel-cleaned mean over the window;
+    ``delta`` compares it to the mean over the **previous** equal-length
+    window ``[start - (end - start), start)`` — ``None`` when that prior
+    window holds no readings (e.g. the "All" range, which reaches back to
+    the first reading). Also returns the latest timestamp *within* the
+    window so the UI can show data currency.
+
+    Returns ``(long_df[metric, value, delta], latest_ts)``.
+    """
+    safe = safe_sensor_table(table)
+    pairs = available_metrics(table)
+    if not pairs:
+        return pd.DataFrame(columns=["metric", "value", "delta"]), None
+
+    prev_start = start - (end - start)
+    cur_cols = ", ".join(
+        f"avg({_clean_expr(col, m)}) FILTER (WHERE ts >= :start AND ts < :end) AS {m.key}"
+        for m, col in pairs
+    )
+    prev_cols = ", ".join(
+        f"avg({_clean_expr(col, m)}) FILTER (WHERE ts >= :pstart AND ts < :start) AS {m.key}_prev"
+        for m, col in pairs
+    )
+    sql = f"""
+        SELECT max(ts) FILTER (WHERE ts >= :start AND ts < :end) AS _last,
+               {cur_cols}, {prev_cols}
+        FROM {safe}
+        WHERE ts >= :pstart AND ts < :end
+    """
+    df = read_sql(sql, {"start": start, "end": end, "pstart": prev_start})
+    if df.empty:
+        return pd.DataFrame(columns=["metric", "value", "delta"]), None
+
+    row = df.iloc[0]
+    latest_ts = pd.to_datetime(row["_last"]) if pd.notna(row["_last"]) else None
+    records = []
+    for m, _ in pairs:
+        value = row.get(m.key)
+        prev = row.get(f"{m.key}_prev")
+        value = None if pd.isna(value) else float(value)
+        delta = None if (value is None or pd.isna(prev)) else value - float(prev)
         records.append({"metric": m.key, "value": value, "delta": delta})
     return pd.DataFrame.from_records(records), latest_ts
 

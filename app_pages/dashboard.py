@@ -37,8 +37,8 @@ from src.data import (
     available_metrics,
     build_comparison_frame,
     load_devices,
-    load_latest,
     load_locations,
+    load_range_summary,
     load_routes,
     load_timeseries,
 )
@@ -82,9 +82,13 @@ drow = devices[devices["table_name"] == table].iloc[0]
 is_mobile = bool(drow["is_mobile"])
 device_name = device_label(drow)  # clean "name · city", no type prefix
 
-# Latest snapshot feeds the hero, the KPI strip and the CAQI verdict.
-latest_df, latest_ts = load_latest(table)
-vals = {r.metric: (r.value, r.delta) for r in latest_df.itertuples()}
+# Snapshot for the hero, the KPI strip and the CAQI verdict. Everything here
+# is the **mean over the selected range** (so the tiles change with the time
+# range), with the trend measured against the previous equal-length period.
+avg_label = "full-record average" if fs.range_key == "All" else f"{fs.range_key} average"
+prev_label = None if fs.range_key == "All" else f"previous {fs.range_key}"
+summary_df, latest_ts = load_range_summary(table, fs.start, fs.end)
+vals = {r.metric: (r.value, r.delta) for r in summary_df.itertuples()}
 band = caqi_band(vals.get("pm2_5", (None,))[0], vals.get("pm10_0", (None,))[0])
 
 # === ZONE 1: hero card — names the device + states the verdict (focal point) =
@@ -92,27 +96,35 @@ with st.container(border=True):
     hL, hR = st.columns([0.62, 0.38], gap="medium", vertical_alignment="center")
     with hL:
         if band is None:
-            st.subheader(f":material/help: {device_name} — air quality: no current reading")
-            st.caption("No usable PM2.5/PM10 reading right now.")
+            st.subheader(f":material/help: {device_name} — air quality: no reading in range")
+            st.caption("No usable PM2.5/PM10 reading in the selected range.")
         else:
             st.subheader(f"{band.icon} {device_name} — air quality: {band.quality}")
             st.markdown(f":{_BAND_BADGE.get(band.level, 'gray')}-badge[CAQI: {band.label}] &nbsp; {band.advice}")
-            meta = "CAQI computed from PM2.5/PM10"
+            meta = f"CAQI from PM2.5/PM10 · {avg_label}"
             if latest_ts is not None:
-                meta += f" · latest reading {latest_ts:%Y-%m-%d %H:%M}"
+                meta += f" · through {latest_ts:%Y-%m-%d %H:%M}"
             st.caption(meta, help=COMPUTED_NOTE)
     with hR:
         # Dominant-pollutant headline number paired with the verdict (IQAir pattern).
         dom_key = "pm2_5" if vals.get("pm2_5", (None,))[0] is not None else "pm10_0"
         if vals.get(dom_key, (None,))[0] is not None:
-            metric_tile(dom_key, *vals.get(dom_key, (None, None)))
+            metric_tile(
+                dom_key, *vals.get(dom_key, (None, None)),
+                value_desc=avg_label, baseline_label=prev_label or "previous period",
+            )
 
 # === ZONE 2: KPI strip — lifted above the fold (was hidden in a tab) =========
-if latest_ts is not None:
-    st.caption(f":material/schedule: Latest reading {latest_ts:%Y-%m-%d %H:%M} · trend vs. previous 24 h")
+strip_cap = f":material/schedule: {avg_label[:1].upper()}{avg_label[1:]}"
+if prev_label:
+    strip_cap += f" · trend vs. {prev_label}"
+st.caption(strip_cap)
 with st.container(horizontal=True):
     for key in (k for k in HEADLINE_KPIS if k in vals):
-        metric_tile(key, *vals.get(key, (None, None)))
+        metric_tile(
+            key, *vals.get(key, (None, None)),
+            value_desc=avg_label, baseline_label=prev_label or "previous period",
+        )
     aqi_tile(band)
 
 # === ZONE 3: bento — primary visual beside its spatial/trip context ==========

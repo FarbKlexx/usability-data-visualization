@@ -369,3 +369,69 @@ Newest entries are appended at the bottom.
   sidebar. Screenshot confirms the bar starts at the sidebar's right edge.
 - **CLAUDE.md** Theming-exception note updated (geometry from `stMain`,
   `ResizeObserver`; dropped the old "assumes collapsed sidebar" caveat).
+
+---
+
+## 10. KPI trend baseline follows the selected time range
+
+**Prompt:**
+
+> the "Latest reading 2025-11-19 15:53 · trend vs. previous 24 h" section
+> should change depending on which time range is selected
+
+**Summary of changes:**
+
+- The KPI "trend" was always computed against the **previous 24 h**
+  regardless of the range, so relabeling the caption alone would have lied.
+  Made the baseline window actually follow the selected range (honest data).
+- **`src/data/loaders.py`**: `load_latest` gained a `baseline_seconds`
+  parameter (default `86400`). The trend delta = latest − mean over that
+  window before the latest reading; `None` compares against **all** earlier
+  readings (for the "All" range).
+- **`src/components/kpi.py`**: `metric_tile` gained a `baseline_label`
+  (default "previous 24 h") so the tile tooltip names the right comparison
+  window.
+- **`app_pages/dashboard.py`**: a `_BASELINE` map turns the active range
+  into `(seconds, label)` — 24 h→86400, 7 d→604800, 30 d→2592000,
+  All→`(None, "the full record")`. `load_latest` is called with that
+  window; the caption reads "trend vs. {label}" and both the hero and strip
+  tiles pass the label. Map (`load_latest(chosen)`) keeps the 24 h default.
+- **Verified** per range: caption shows "previous 24 h / 7 d / 30 d / the
+  full record", and the PM2.5 delta genuinely changes with the baseline
+  (−3.7 / +2.4 / +2.9 / +2.1 µg/m³) — relabel *and* recompute, not just text.
+
+---
+
+## 11. KPI tile values follow the selected time range
+
+**Prompt:**
+
+> [PM2.5 / PM10 / CO₂ / Temp / Humidity / Air-quality tiles] these should
+> also change based on the selected time range
+
+**Summary of changes:**
+
+- The KPI tiles showed the **latest reading**, which is fixed for this
+  frozen dataset — so they never changed with the range. Switched the whole
+  snapshot zone to the **mean over the selected range** (the only way the
+  values can honestly track the range), with the trend measured
+  period-over-period.
+- **`src/data/loaders.py`**: new `load_range_summary(table, start, end)` —
+  per-metric sentinel-cleaned mean over `[start, end)` plus a delta vs. the
+  **previous equal-length window** `[start-(end-start), start)` (`None` when
+  that window is empty, e.g. "All"); also returns the latest ts in range for
+  currency. Exported from `src/data/__init__.py`. `load_latest` is kept (the
+  Map page still shows a live snapshot).
+- **`src/components/kpi.py`**: `metric_tile` gained `value_desc` ("latest
+  reading" vs e.g. "7 d average") and drops the "trend vs." clause from the
+  tooltip when there's no delta.
+- **`app_pages/dashboard.py`**: the hero (verdict + dominant-PM number +
+  CAQI), the strip tiles and the CAQI tile all use `load_range_summary`, so
+  they're internally consistent (hero PM == strip PM). Captions now read
+  "{range} average · trend vs. previous {range}" (or "Full-record average"
+  for All); hero meta reads "… · {range} average · through {ts}". Removed the
+  now-unused `_BASELINE`/`load_latest` wiring.
+- **Verified** per range: PM2.5 value changes **10.9 → 4.9 → 4.4 → 5.2 µg/m³**
+  (24 h / 7 d / 30 d / All); deltas are period-over-period. Confirmed the
+  "24 h" no-delta case is honest — the 24–48 h-before window genuinely has 0
+  rows (a data gap), so no trend arrow is shown.

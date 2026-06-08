@@ -34,8 +34,20 @@ _INVERSE_DELTA = {"pm2_5", "pm10_0", "co2"}
 _BAND_BADGE = {0: "green", 1: "blue", 2: "orange", 3: "red", 4: "violet"}
 
 
-def metric_tile(metric_key: str, value: float | None, delta: float | None) -> None:
-    """Render one measure as a bordered ``st.metric`` tile."""
+def metric_tile(
+    metric_key: str,
+    value: float | None,
+    delta: float | None,
+    value_desc: str = "latest reading",
+    baseline_label: str = "previous 24 h",
+) -> None:
+    """Render one measure as a bordered ``st.metric`` tile.
+
+    ``value_desc`` says what ``value`` is ("latest reading", or e.g.
+    "7 d average"); ``baseline_label`` names the window the trend delta is
+    measured against. Both track the caller's range so the tooltip never
+    claims the wrong period.
+    """
     metric = get(metric_key)
     label = f"{metric.icon} {metric.short_label}"
     value_str = metric.format(value)
@@ -51,12 +63,15 @@ def metric_tile(metric_key: str, value: float | None, delta: float | None) -> No
     else:
         delta_color = "off"  # neutral: arrow only, grey
 
+    help_text = f"{metric.label} · {value_desc}"
+    if delta_str is not None:
+        help_text += f" · trend vs. mean over {baseline_label}"
     st.metric(
         label=label,
         value=value_str,
         delta=delta_str,
         delta_color=delta_color,
-        help=f"{metric.label} · latest reading vs. mean of the previous 24 h.",
+        help=help_text + ".",
         border=True,
     )
 
