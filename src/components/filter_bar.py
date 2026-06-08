@@ -118,7 +118,9 @@ def filter_bar(
         st.session_state[k_sensors] = default_tables if multi else default_tables[0]
         st.session_state[k_range] = default_range
 
-    with st.container(border=True):
+    # key → a stable `.st-key-{prefix}_bar` class (no emotion hash) so a page
+    # can hook this toolbar in CSS — e.g. the Dashboard makes `ov` sticky.
+    with st.container(border=True, key=f"{prefix}_bar"):
         c_sensor, c_range, c_reset = st.columns([0.56, 0.32, 0.12], vertical_alignment="bottom")
         with c_sensor:
             if multi:

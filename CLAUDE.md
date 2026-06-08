@@ -191,13 +191,40 @@ use `st.markdown(..., unsafe_allow_html=True)` or `st.html()` with
 `<style>` blocks** — it bypasses the design system and breaks dark
 mode. If a color or radius needs to change, change it in the config.
 
-**The one documented exception:** `app.py` injects a single tiny
-`st.html(<style>)` that swaps the sidebar burger-menu glyph (Streamlit's
-`»` expand control → the Material Symbols `menu` ☰), because Streamlit
-exposes no config hook for that built-in icon. It changes *only the
-glyph* (colour/size stay theme-driven via `::after` inheriting the icon
-font + current colour), so dark mode is verified intact. Don't grow this
-into general CSS styling — anything theme-able still belongs in the config.
+**The documented exceptions:** a small `st.html(<style>)` in `app.py`
+plus one tiny JS scroll-watcher (`components.html` in `dashboard.py`),
+for chrome behaviours Streamlit gives no config hook for, all verified
+theme-safe in light **and** dark:
+
+1. swaps the sidebar burger glyph (`»` expand control → Material Symbols
+   `menu` ☰) — only the glyph changes (`::after` inherits the icon font +
+   current colour);
+2. makes the **Dashboard** filter bar (`.st-key-ov_bar`, via the
+   `key="ov_bar"` hook) **sticky on scroll**, where it condenses and
+   **full-bleeds across the main content column**, reverting to the
+   contained card when scrolled back up.
+   - Sticky is set on the bar's `stLayoutWrapper` (`:has()`), since the
+     bar's own wrapper is too short to stick; `top: 3.5rem` clears
+     Streamlit's 56px fixed header.
+   - The morph is a **`.ov-stuck` class + CSS transition**, NOT a
+     scroll-driven animation: `animation-timeline: scroll()` is
+     Chromium-only, and there it degraded to "always morphed" in
+     Safari/Firefox. A 0-height same-origin `components.html` iframe runs
+     a watcher that toggles `.ov-stuck` when the bar reaches the top, so
+     the morph works in every browser.
+   - `.ov-stuck` (CSS) only does the non-geometry morph (padding,
+     `border-radius:0`, shadow) + `light-dark()` background (no theme var
+     exists). The full-bleed **geometry** is set inline by the watcher
+     from `stMain`'s `clientWidth`/left (not `vw`), so it spans the main
+     column and **not an open sidebar**; `max-width` is overridden inline
+     too (Streamlit clamps these blocks to `max-width:100%`). A
+     `MutationObserver` re-binds across reruns and a `ResizeObserver` on
+     `stMain` re-syncs when the sidebar opens/closes or the window resizes.
+
+All degrade gracefully (no JS → contained sticky bar, never broken).
+**Don't grow this into general CSS/JS styling** — anything theme-able
+still belongs in the config; these hooks are only for chrome the
+framework doesn't expose.
 
 The categorical palette in the config mirrors `OKABE_ITO` in
 `src/utils/palette.py`; keep them in sync when editing.

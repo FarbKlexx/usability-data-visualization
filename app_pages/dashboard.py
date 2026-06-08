@@ -27,6 +27,7 @@ import itertools
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from app_pages.comparison import render_compare
 from src.components import charts, filter_bar
@@ -299,4 +300,56 @@ with tabs["correlation"]:
 # Publish the current view to the URL (shareable/bookmarkable).
 publish_query_params(
     {"ov_sensors": table, "ov_range": fs.range_key, "ov_corr": st.session_state.get("ov_corr", [])}
+)
+
+# Sticky filter bar: toggle `.ov-stuck` on the bar once it reaches the top so
+# the CSS in app.py morphs it into a full-width top bar (and reverts on the way
+# back up). Done in JS — not a CSS scroll-timeline — so it works in Safari and
+# Firefox too. Runs in a 0-height same-origin iframe, reaches the parent DOM,
+# and re-binds across Streamlit reruns via a MutationObserver.
+components.html(
+    """
+    <script>
+    (function () {
+      const doc = window.parent.document;
+      const STICK_TOP = 58;  /* matches the CSS sticky offset (top: 3.5rem) */
+      function sync() {
+        const bar = doc.querySelector('.st-key-ov_bar');
+        const main = doc.querySelector('[data-testid="stMain"]');
+        if (!bar || !main) return;
+        const stuck = bar.getBoundingClientRect().top <= STICK_TOP;
+        bar.classList.toggle('ov-stuck', stuck);
+        if (stuck) {
+          /* span the main content column (NOT the viewport), so the bar never
+             slides under an open sidebar; clientWidth excludes the scrollbar. */
+          const wrap = bar.parentElement;
+          const leftGutter = wrap.getBoundingClientRect().left - main.getBoundingClientRect().left;
+          const w = main.clientWidth;
+          bar.style.width = w + 'px';
+          bar.style.maxWidth = w + 'px';
+          bar.style.marginLeft = (-leftGutter) + 'px';
+        } else {
+          bar.style.width = '';
+          bar.style.maxWidth = '';
+          bar.style.marginLeft = '';
+        }
+      }
+      function bind() {
+        const sc = doc.querySelector('[data-testid="stMain"]');
+        if (sc && !sc.__ovBound) {
+          sc.__ovBound = true;
+          sc.addEventListener('scroll', sync, { passive: true });
+          new ResizeObserver(sync).observe(sc);  /* fires on sidebar open/close + resize */
+        }
+        sync();
+      }
+      if (!window.parent.__ovStickyInit) {
+        window.parent.__ovStickyInit = true;
+        new MutationObserver(bind).observe(doc.documentElement, { childList: true, subtree: true });
+      }
+      bind();
+    })();
+    </script>
+    """,
+    height=0,
 )

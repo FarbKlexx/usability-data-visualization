@@ -106,6 +106,44 @@ st.html(
         position: absolute;
         inset: 0;
     }
+
+    /* Dashboard filter bar (prefix "ov"): a full bordered card at rest that
+       sticks to the top and condenses into a slim top bar once you scroll
+       past it. Pure CSS, degrades gracefully.
+       Sticky is applied to the bar's *layout wrapper* (selected via :has),
+       not the bar itself — the bar's own wrapper is exactly the bar's height
+       so it has no room to stick, whereas its parent (the main vertical
+       block) is tall. The morph + theme-correct opaque background
+       (light-dark(); the bar is otherwise transparent and would bleed when
+       stuck) live on the bar. No scroll-timeline support → stays full-size
+       sticky; no :has support → not sticky but otherwise unchanged. */
+    [data-testid="stLayoutWrapper"]:has(> .st-key-ov_bar) {
+        position: sticky;
+        top: 3.5rem;  /* clear Streamlit's ~56px fixed header (it sits above) */
+        z-index: 100;
+    }
+    .st-key-ov_bar {
+        width: 100%;
+        background: light-dark(rgb(255, 255, 255), rgb(13, 17, 23));
+        transition: width .18s ease, max-width .18s ease, margin-left .18s ease,
+                    padding .18s ease, border-radius .18s ease, box-shadow .18s ease;
+        will-change: width, margin, padding, box-shadow, border-radius;
+    }
+    /* dashboard.py's tiny scroll-watcher toggles .ov-stuck when the bar reaches
+       the top. A class + CSS transition (not a scroll-driven animation) is what
+       makes this work in EVERY browser — Safari/Firefox don't support
+       animation-timeline:scroll(), where the prior approach degraded to
+       "always morphed". When stuck: condense, square the corners, drop a
+       shadow. The full-bleed *geometry* (width / max-width / margin-left) is
+       set inline by the watcher from the main content area's size, so it spans
+       the main column and NOT the open sidebar (vw-based bleed would slide
+       under it). */
+    .st-key-ov_bar.ov-stuck {
+        padding-top: 6px;
+        padding-bottom: 6px;
+        border-radius: 0;
+        box-shadow: 0 8px 18px -8px rgba(0, 0, 0, 0.38);
+    }
     </style>
     """
 )

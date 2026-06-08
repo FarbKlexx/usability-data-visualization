@@ -234,3 +234,138 @@ Newest entries are appended at the bottom.
 - Verified by screenshot in **both light and dark mode**: the ☰ renders
   top-left in the theme-appropriate colour; the rest of the theme is
   unaffected.
+
+---
+
+## 6. Sticky, morphing filter bar on the Dashboard
+
+**Prompt:**
+
+> i want this first bar on the dashboard to be like it is but when you
+> scroll past it it should become sticky and morph as a top bar
+
+**Summary of changes:**
+
+- The Dashboard's filter bar now stays a full bordered card at rest and,
+  once you scroll past it, **sticks just below the header and condenses
+  into a slim top bar** (reduced padding, squared top corners, drop
+  shadow). Pure CSS, no JS.
+- **`src/components/filter_bar.py`**: gave the toolbar container a
+  `key=f"{prefix}_bar"` so it gets a stable `.st-key-{prefix}_bar` class
+  (only the Dashboard's `ov` instance is styled).
+- **`app.py`** (extending the existing chrome `st.html` block):
+  - sticky is applied to the bar's `stLayoutWrapper` via
+    `:has(> .st-key-ov_bar)` — the bar's own wrapper is exactly its height
+    so it had no room to stick; its parent (the main vertical block) is
+    tall, so the wrapper sticks correctly. `top: 3.5rem` clears Streamlit's
+    56px fixed header (which sits at `z-index: 999990`).
+  - the morph is a scroll-driven `@keyframes` (`animation-timeline:
+    scroll(nearest)`, range `20px 150px`); the opaque background uses CSS
+    `light-dark()` (Streamlit exposes no theme CSS var, and the bar is
+    otherwise transparent → would bleed when stuck).
+- **Investigated the live DOM first** (scroll container = `stMain`,
+  `color-scheme` on `.stApp` → `light-dark()` resolves, `:has()` +
+  scroll-timeline supported, the wrapper-height sticky trap, the 56px
+  header offset) so the implementation rests on stable hooks.
+- **Verified by screenshot** at rest and scrolled, in **light and dark**:
+  pins at ~53px below the header, condenses (padding 14→6px) with a shadow,
+  background stays theme-correct (white light / dark dark), content scrolls
+  under it.
+- **CLAUDE.md** Theming exception note updated to cover this second use.
+
+---
+
+## 7. Sticky filter bar goes full-width
+
+**Prompt:**
+
+> when becoming sticky, the bar should also become full width, and back to
+> its original size when unsticking
+
+**Summary of changes:**
+
+- **`app.py`** (the `ov-bar-condense` scroll-driven keyframes): when the
+  Dashboard filter bar sticks, it now **expands to the full viewport width**
+  (edge-to-edge top bar) and reverts to its original contained card when
+  scrolled back up.
+- Implementation: animate `width: 100%` → `width: 100vw` plus
+  `margin-left: calc(50% - 50vw)`; also lift `max-width` to `100vw` in the
+  morph — the bar carries Streamlit's `max-width: 100%`, which was clamping
+  `100vw` back to the content width (1130px). Diagnosed via DOM inspection
+  (the bar is a `flex:1 1 0%` item with `max-width:100%`, so neither
+  negative margins nor `width` alone expanded it). Retimed the range to
+  `115px 175px` so the morph fires as the bar reaches the top.
+- Because the morph is scroll-driven, the reversal ("back to original size
+  when unsticking") is automatic.
+- **Verified** by measuring `getBoundingClientRect` at rest vs. stuck:
+  contained `left 75 → right 1205` (1130px, radius 8px) becomes
+  `left 0 → right 1280` (full 1280px, radius 0) in light **and** dark, with
+  no horizontal scrollbar (`.stApp` clips at the viewport).
+- **CLAUDE.md** Theming-exception note updated.
+
+---
+
+## 8. Fix: sticky bar was *always* full width (Safari/Firefox)
+
+**Prompt:**
+
+> for me its always full width, not just when sticky
+
+**Summary of changes:**
+
+- **Root cause:** the morph used a CSS scroll-driven animation
+  (`animation-timeline: scroll()`), which only Chromium supports. In
+  Safari/Firefox the timeline is ignored, so `animation: … both` ran on
+  the default 0-duration timeline and immediately filled to its *end*
+  state — leaving the bar permanently morphed (full-width). My earlier
+  "degrades gracefully" claim was wrong.
+- **Fix — switched to a browser-agnostic approach:**
+  - **`app.py`**: replaced the `@keyframes`/`animation-timeline` block with
+    a plain `.st-key-ov_bar` (contained) + `.st-key-ov_bar.ov-stuck`
+    (full-width/condensed) pair and a CSS `transition`. CSS transitions are
+    universally supported.
+  - **`app_pages/dashboard.py`**: added a 0-height `components.html` iframe
+    running a tiny scroll-watcher that toggles `.ov-stuck` on the bar once
+    its top reaches the sticky offset (~58px), re-binding across Streamlit
+    reruns with a `MutationObserver` (reaches the parent DOM via
+    `window.parent`, same-origin srcdoc).
+- Now the bar is **contained at rest** and only goes full-width/sticky when
+  scrolled past — in every browser. Safe fallback: if the JS doesn't run,
+  the bar is simply a contained sticky bar (never "always full width").
+- **Verified** in Chromium (logic is browser-agnostic; it no longer depends
+  on scroll-timeline): REST → `stuck:false, width 1130, left 75`; SCROLLED
+  → `stuck:true, width 1280, left 0`; BACK TO TOP → contained again.
+- **CLAUDE.md** Theming-exception note rewritten (CSS + the JS watcher;
+  noted the full-bleed assumes a collapsed sidebar).
+
+---
+
+## 9. Fix: sticky bar slid under the open sidebar
+
+**Prompt:**
+
+> the bar doesnt behave correctly when the burger menu is open
+
+**Summary of changes:**
+
+- **Cause:** the full-bleed used viewport units (`width:100vw`,
+  `margin-left: calc(50% - 50vw)`), which ignore the sidebar — so with the
+  burger menu open the stuck bar spanned the whole window and slid under
+  the sidebar.
+- **Fix:** the full-bleed geometry is now computed from the **main content
+  column** instead of the viewport.
+  - **`app.py`**: `.ov-stuck` no longer sets width/margin — it keeps only
+    the non-geometry morph (padding, squared corners, shadow, `light-dark()`
+    background).
+  - **`app_pages/dashboard.py`**: the scroll-watcher sets the bar's
+    `width`/`max-width`/`margin-left` **inline** from `stMain`'s
+    `clientWidth` and left offset, so the bar spans exactly the main column
+    (right of the sidebar, left of the scrollbar). Added a `ResizeObserver`
+    on `stMain` so it re-syncs while the sidebar opens/closes (and on window
+    resize); cleared the inline styles when unstuck.
+- **Verified** in both states: sidebar collapsed → bar `left 0 → 1280`
+  (full viewport); sidebar open → bar `left 300 → 1280` (width 980), exactly
+  matching `stMain` (`left 300`, `clientWidth 980`) — no longer under the
+  sidebar. Screenshot confirms the bar starts at the sidebar's right edge.
+- **CLAUDE.md** Theming-exception note updated (geometry from `stMain`,
+  `ResizeObserver`; dropped the old "assumes collapsed sidebar" caveat).
