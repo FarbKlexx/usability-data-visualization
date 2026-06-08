@@ -17,8 +17,9 @@ st.set_page_config(
     page_title="Air Quality Dashboard",
     page_icon=":material/air:",
     layout="wide",
-    # Nav lives in the left sidebar; start it collapsed so it reads as a
-    # burger menu (the » control at top-left slides it out).
+    # Nav lives in the left sidebar; start it collapsed. On desktop the CSS in
+    # this file restyles "collapsed" into an always-on icon rail (see
+    # CLAUDE.md §Theming); the » control expands it to the labelled drawer.
     initial_sidebar_state="collapsed",
     menu_items={
         "About": "Air Quality Usability Dashboard — built for the Usability course.",
@@ -87,26 +88,12 @@ if db_error:
         st.code(db_error)
     st.stop()
 
-# The sidebar nav opens from a left burger menu. Streamlit's expand control
-# defaults to a » chevron and exposes no config hook for that glyph, so this
-# is the one unavoidable CSS escape hatch: swap *only the glyph* to the
-# Material Symbols "menu" hamburger (☰, codepoint \e5d2). Colour/size stay
-# theme-driven (the original span keeps its layout; we overlay the glyph via
-# ::after, inheriting the icon font + current colour), so dark mode is intact.
+# Theme-safe CSS escape hatches for chrome Streamlit gives no config hook for
+# (see CLAUDE.md §Theming for the full annotated list). All verified in light
+# and dark. The sidebar expand control keeps Streamlit's own default glyph.
 st.html(
     """
     <style>
-    [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {
-        visibility: hidden;
-        position: relative;
-    }
-    [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"]::after {
-        content: "\\e5d2";  /* Material Symbols: menu */
-        visibility: visible;
-        position: absolute;
-        inset: 0;
-    }
-
     /* Dashboard filter bar (prefix "ov"): a full bordered card at rest that
        sticks to the top and condenses into a slim top bar once you scroll
        past it. Pure CSS, degrades gracefully.
@@ -221,6 +208,117 @@ st.html(
     }
     @media (prefers-reduced-motion: reduce) {
         .aq-skel { animation: none; }
+    }
+
+    /* ===== Persistent navigation rail (desktop) ==========================
+       Turn Streamlit's hide-completely collapsed sidebar into an always-on
+       ICON RAIL, and its expanded state into a labelled DRAWER. A single
+       toggle lives INSIDE the menu (the sidebar's own collapse button, a real
+       toggle once it's clickable) and morphs ☰→✕ on open; Streamlit's top-bar
+       expand button is removed. Categories render as static
+       eyebrows (chevron hidden, header made non-interactive) instead of
+       collapsible dropdowns. The app's flex layout (stAppViewContainer is
+       display:flex with the sidebar as a flex child) means resizing the
+       sidebar reflows the main column automatically — no margin maths.
+       Desktop only (min-width:768px); on phones Streamlit's off-canvas burger
+       behaviour is left untouched, and with no CSS it degrades to that too. */
+    @media (min-width: 768px) {
+        /* RAIL — collapsed becomes a narrow on-screen strip, not hidden */
+        section[data-testid="stSidebar"][aria-expanded="false"] {
+            width: 4.5rem !important;
+            min-width: 4.5rem !important;
+            transform: none !important;
+            visibility: visible !important;
+            transition: width .18s ease;
+        }
+        /* centre each icon and drop the row padding meant for the 300px drawer */
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarNavLink"] {
+            justify-content: center;
+            padding-left: 0.25rem;
+            padding-right: 0.25rem;
+        }
+        /* hide the page-name labels in the rail (icons only) */
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarNavLink"] span[label] {
+            display: none;
+        }
+        /* the category eyebrows have no room in the rail */
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stNavSectionHeader"] {
+            display: none;
+        }
+        /* tighten the nav's own gutters so a 4.5rem rail isn't cramped */
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarNav"],
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarUserContent"] {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+        /* SINGLE in-menu toggle. The sidebar's own collapse button
+           (stSidebarCollapseButton) is a true toggle — when actually clickable
+           it expands while collapsed and collapses while expanded — and it
+           lives INSIDE the menu, so it is the one control we keep. Force it
+           always-visible in the rail (Streamlit otherwise only reveals it on
+           hover) and centre it at the top of the icon column. */
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarCollapseButton"] {
+            visibility: visible !important;
+        }
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarHeader"] {
+            justify-content: center;
+        }
+        /* Remove the top-bar menu logic entirely: Streamlit's toolbar expand
+           button is gone, so the in-menu toggle above is the only way to open. */
+        [data-testid="stExpandSidebarButton"] {
+            display: none !important;
+        }
+        /* Morph the toggle glyph: a hamburger (menu) when closed, an X (close)
+           when open. The two glyphs sit on ::before/::after of the button's icon
+           span and cross-fade + quarter-rotate when aria-expanded flips, so the
+           swap reads as a morph; the native chevron glyph is hidden underneath. */
+        [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"] {
+            visibility: hidden;
+            position: relative;
+        }
+        [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::before,
+        [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::after {
+            visibility: visible;
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity .2s ease, transform .2s ease;
+        }
+        [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::before {
+            content: "\\e5d2";  /* Material Symbols: menu (hamburger) */
+        }
+        [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::after {
+            content: "\\e5cd";  /* Material Symbols: close (X) */
+        }
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::before {
+            opacity: 1; transform: rotate(0);
+        }
+        section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::after {
+            opacity: 0; transform: rotate(-90deg);
+        }
+        section[data-testid="stSidebar"][aria-expanded="true"] [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::before {
+            opacity: 0; transform: rotate(90deg);
+        }
+        section[data-testid="stSidebar"][aria-expanded="true"] [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::after {
+            opacity: 1; transform: rotate(0);
+        }
+
+        /* DRAWER — eyebrow styling + remove the collapsible-dropdown affordance.
+           pointer-events:none makes the section header a static label, so a
+           click can't collapse the group (the pages are never hidden); the
+           chevron glyph is dropped so it reads as a kicker, not a toggle. */
+        [data-testid="stNavSectionHeader"] {
+            pointer-events: none;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 0.72rem;
+            opacity: 0.55;
+        }
+        [data-testid="stNavSectionHeader"] [data-testid="stIconMaterial"] {
+            display: none;
+        }
     }
     </style>
     """

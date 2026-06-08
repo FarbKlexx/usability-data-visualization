@@ -362,13 +362,22 @@ publish_query_params(
 # Sticky filter bar: toggle `.ov-stuck` on the bar once it reaches the top so
 # the CSS in app.py morphs it into a full-width top bar (and reverts on the way
 # back up). Done in JS — not a CSS scroll-timeline — so it works in Safari and
-# Firefox too. Runs in a 0-height same-origin iframe, reaches the parent DOM,
-# and re-binds across Streamlit reruns via a MutationObserver.
+# Firefox too. Runs in a 0-height same-origin iframe, reaches the parent DOM.
+#
+# This iframe is *destroyed and recreated* when you leave the Dashboard and come
+# back. Its scroll listener / observers live in the iframe's JS context, so they
+# die with it — yet `stMain` persists across that navigation. So the watcher
+# must NOT gate re-binding on flags stored on the persistent DOM (an earlier
+# `stMain.__ovBound` / `window.parent.__ovStickyInit` did, which left the
+# returning page with a dead listener and a non-full-width bar). Instead every
+# iframe run re-binds fresh in its own live context, first tearing down the
+# previous run's listener/observers (refs parked on the persistent nodes).
 components.html(
     """
     <script>
     (function () {
-      const doc = window.parent.document;
+      const W = window.parent;
+      const doc = W.document;
       const STICK_TOP = 58;  /* matches the CSS sticky offset (top: 3.5rem) */
       function sync() {
         const bar = doc.querySelector('.st-key-ov_bar');
@@ -393,17 +402,25 @@ components.html(
       }
       function bind() {
         const sc = doc.querySelector('[data-testid="stMain"]');
-        if (sc && !sc.__ovBound) {
-          sc.__ovBound = true;
+        /* `__ovSync` holds the live sync fn of whichever iframe bound this node.
+           A different value (or none) means this is a fresh iframe / new node —
+           swap in our listener and re-arm the ResizeObserver. Same value means
+           we already bound it this run, so don't stack listeners. */
+        if (sc && sc.__ovSync !== sync) {
+          if (sc.__ovSync) sc.removeEventListener('scroll', sc.__ovSync);
           sc.addEventListener('scroll', sync, { passive: true });
-          new ResizeObserver(sync).observe(sc);  /* fires on sidebar open/close + resize */
+          sc.__ovSync = sync;
+          if (sc.__ovRO) { try { sc.__ovRO.disconnect(); } catch (e) {} }
+          sc.__ovRO = new ResizeObserver(sync);  /* fires on sidebar open/close + resize */
+          sc.__ovRO.observe(sc);
         }
         sync();
       }
-      if (!window.parent.__ovStickyInit) {
-        window.parent.__ovStickyInit = true;
-        new MutationObserver(bind).observe(doc.documentElement, { childList: true, subtree: true });
-      }
+      /* One live MutationObserver per iframe run; drop the previous (now-dead)
+         one so they don't pile up across navigations. */
+      if (W.__ovMO) { try { W.__ovMO.disconnect(); } catch (e) {} }
+      W.__ovMO = new MutationObserver(bind);
+      W.__ovMO.observe(doc.documentElement, { childList: true, subtree: true });
       bind();
     })();
     </script>

@@ -167,12 +167,25 @@ Comparison is no longer a page: `app_pages/comparison.py` exposes
 ### Navigation
 
 `app.py` registers pages explicitly via `st.navigation({...})` with
-`position="sidebar"`; `set_page_config(initial_sidebar_state="collapsed")`
-makes it a **left burger menu** (collapsed by default, opened via the `»`
-control). `PAGES` is a **dict of two labelled sections** — *Monitor &
-Analyse* (Dashboard, Time Series, Map) and *Reference & Settings* (Devices
-& Data Quality, Settings) — so the menu reads as two sense-clusters rather
-than a flat list (Hick/Miller at the menu level).
+`position="sidebar"`. On **desktop the sidebar is a persistent
+navigation rail** (CSS, see [Theming](#theming) exception 3): the
+`initial_sidebar_state="collapsed"` state is restyled from
+hide-completely into an always-on **icon rail** (≈4.5rem, page icons
+only), and the expanded state into a **labelled drawer** (icons + page
+names) that pushes the content right. A **single toggle lives inside the
+menu** (the sidebar's own collapse button, which is a real two-way toggle
+once it's clickable) and **morphs ☰→✕** when opened; Streamlit's top-bar
+expand button is removed, so there's exactly one control. On phones (<768px) the rail CSS doesn't apply
+and Streamlit's off-canvas burger behaviour is kept. `PAGES` is a
+**dict of two labelled sections** — *Monitor & Analyse* (Dashboard, Time
+Series, Map) and *Reference & Settings* (Devices & Data Quality,
+Settings); these render as **static category eyebrows** above each group
+(the collapsible-dropdown chevron is hidden and the header made
+non-interactive — the pages are never hidden), so the menu reads as two
+sense-clusters rather than a flat list (Hick/Miller at the menu level).
+Each `st.Page` carries a Material Symbols icon (`:material/dashboard:`,
+`timeline`, `map`, `sensors`, `tune`) — these are the rail glyphs, so a
+new page **must** pass a sensible `icon=` or the rail shows a blank slot.
 The pages directory is named **`app_pages/`, not `pages/`**, on purpose —
 `pages/` would trigger Streamlit's legacy auto-discovery and
 double-register every page.
@@ -197,10 +210,7 @@ plus one tiny JS scroll-watcher (`components.html` in `dashboard.py`),
 for chrome behaviours Streamlit gives no config hook for, all verified
 theme-safe in light **and** dark:
 
-1. swaps the sidebar burger glyph (`»` expand control → Material Symbols
-   `menu` ☰) — only the glyph changes (`::after` inherits the icon font +
-   current colour);
-2. makes the **Dashboard** filter bar (`.st-key-ov_bar`, via the
+1. makes the **Dashboard** filter bar (`.st-key-ov_bar`, via the
    `key="ov_bar"` hook) **sticky on scroll**, where it condenses and
    **full-bleeds across the main content column**, reverting to the
    contained card when scrolled back up.
@@ -221,7 +231,16 @@ theme-safe in light **and** dark:
      too (Streamlit clamps these blocks to `max-width:100%`). A
      `MutationObserver` re-binds across reruns and a `ResizeObserver` on
      `stMain` re-syncs when the sidebar opens/closes or the window resizes.
-3. **Skeleton loaders** (`.aq-skel*` in `app.py`, markup from
+   - **The iframe is destroyed and recreated on page switch**, so its
+     listener/observers (which live in that JS context) die — but `stMain`
+     persists. The watcher therefore must **not** gate re-binding on flags
+     parked on persistent DOM (`stMain.__ovBound` / `window.parent.__ovStickyInit`
+     did, leaving the returning page with a dead listener and a non-full-width
+     bar). Each iframe run instead re-binds fresh in its own live context,
+     tearing down the previous run's listener (`stMain.__ovSync`),
+     `ResizeObserver` (`stMain.__ovRO`) and `MutationObserver`
+     (`window.parent.__ovMO`) first.
+2. **Skeleton loaders** (`.aq-skel*` in `app.py`, markup from
    `src/components/skeleton.py`): content-shaped grey placeholders shown
    while a data load is in flight. Streamlit ships no `st.skeleton` widget
    and the config exposes no token, so the markup is emitted as class'd
@@ -233,9 +252,35 @@ theme-safe in light **and** dark:
    mirror the real widgets (tile-shaped for a tile, chart-shaped for a
    chart) so the layout never jumps. Currently wired across the **Dashboard**
    (hero, KPI strip, bento, Correlation tab) and its **Compare** tab.
+3. **Persistent navigation rail** (CSS in `app.py`, scoped to
+   `@media (min-width:768px)`): repurposes the sidebar's two native states
+   keyed on `section[data-testid="stSidebar"][aria-expanded]`. **Collapsed →
+   icon rail** (forced `width:4.5rem` + `transform:none` so it stays
+   on-screen instead of sliding off; page-name `span[label]`s and the
+   category headers hidden; icons centred). **Expanded → drawer** (native
+   300px; labels + eyebrows shown). The app's `display:flex` layout reflows
+   the main column on width change, so there's no margin maths. Section
+   headers (`stNavSectionHeader`) get eyebrow styling (uppercase, muted) and
+   `pointer-events:none` + a hidden chevron, turning the collapsible dropdown
+   into a static kicker. **One toggle, inside the menu:** the sidebar's own
+   `stSidebarCollapseButton` is a real two-way toggle once it's actually
+   clickable (Streamlit only reveals it on hover, so we force
+   `visibility:visible` and centre it at the rail top), so it's the single
+   control we keep — the toolbar `stExpandSidebarButton` is `display:none`. Its
+   glyph **morphs ☰↔✕** by aria state: the native chevron is hidden and a
+   `menu` (`\e5d2`) and `close` (`\e5cd`) glyph sit on the icon span's
+   `::before`/`::after`, cross-fading + quarter-rotating on the flip. (We use
+   this button rather than relocating the toolbar one because fixed-positioning
+   the toolbar button into the rail hits a stacking-context trap behind the
+   header.) **A
+   blank `<` in a CSS *comment* here will silently nuke the whole
+   `st.html(<style>)` block** — Streamlit's HTML sanitiser mis-parses `<`
+   inside the style and drops it; use unicode arrows (`↔`, `→`), never `<->`
+   or `<tag>`, in these comments.
 
 All degrade gracefully (no JS → contained sticky bar, never broken;
-no skeleton CSS → a plain empty slot, never broken).
+no skeleton CSS → a plain empty slot, never broken; no rail CSS / mobile →
+Streamlit's off-canvas burger sidebar, never broken).
 **Don't grow this into general CSS/JS styling** — anything theme-able
 still belongs in the config; these hooks are only for chrome the
 framework doesn't expose.

@@ -585,3 +585,161 @@ Newest entries are appended at the bottom.
   with headless Chrome — options now read `Stationary · SENSORpi s01 · Minden`,
   `Mobile · …`, `Specialty · …`, `External · …` with no 📍/🚗/🔬/🌐 glyph, and
   no page errors.
+
+## 17. Persistent left navigation rail (icons → labelled drawer)
+
+**Prompt:**
+
+> make the navigation on the left always there (on desktop). find corresponding
+> google font api icons for the pages. make it such that the icons are always
+> shown on the left (collapsed) and if you open the sidebar the names of the
+> pages are also shown. make it such that the pages are not hidden in a dropdown
+> put categorized via an eyebrow above
+
+**Decision:** asked how the rail should expand; user chose **click a toggle**
+(content pushes right when open), not hover.
+
+**Summary of changes:**
+
+- **`app.py`** — added a `@media (min-width:768px)` block to the global
+  `st.html(<style>)` that turns Streamlit's hide-completely collapsed sidebar
+  into an always-on **icon rail** and its expanded state into a **labelled
+  drawer**, keyed on `section[data-testid="stSidebar"][aria-expanded]`:
+  - Collapsed → `width:4.5rem !important` + `transform:none` (stays on-screen);
+    page-name `span[label]`s hidden, icons centred, gutters tightened. The
+    app's `display:flex` layout reflows the main column automatically.
+  - Expanded → native 300px drawer with icons **+** page names.
+  - The native ☰ (expand) / « (collapse) controls toggle `aria-expanded`, so
+    they double as the rail↔drawer toggle — no extra widget/JS.
+  - Category headers (`stNavSectionHeader`) restyled as **static eyebrows**
+    (uppercase, muted) with the collapsible-dropdown chevron hidden and
+    `pointer-events:none` so a click can't hide the pages.
+  - Desktop only; on phones the rail CSS is inert and Streamlit's off-canvas
+    burger is kept. `initial_sidebar_state` stays `collapsed` → rail-by-default.
+- **Icons**: the per-page Material Symbols (Google Fonts) icons were already
+  set on each `st.Page` and are the rail glyphs — `dashboard`, `timeline`,
+  `map`, `sensors`, `tune`; reviewed each as the right fit and kept them.
+- **`CLAUDE.md`** — rewrote the Navigation section for the rail/drawer model
+  and added it as Theming exception 4, including the gotcha below.
+- **Debugging note (cost a while)**: a stray `<` inside a CSS *comment*
+  (`rail<->drawer`, `<section>`) made Streamlit's HTML sanitiser mis-parse the
+  `<style>` and **silently drop the entire `st.html` block** (all card /
+  skeleton / nav CSS vanished). Fixed by using unicode arrows in comments;
+  documented the trap in CLAUDE.md. Isolation-tested with a minimal app to
+  localise it.
+- **Live-verified** with headless Chrome: rail = 67.5px with 5 icons centred
+  (icon centre x=33.75 in a 67.5px rail); ☰ opens the 300px drawer showing
+  names + the two uppercase eyebrows with no chevron; « collapses back; the
+  rail persists across page navigation; clicking a rail icon navigates
+  (`/map` confirmed). No page errors in any state.
+
+## 18. Remove the burger-menu glyph
+
+**Prompt:**
+
+> remove the burger menu icon now
+
+**Summary of changes:**
+
+- **`app.py`** — removed the oldest Theming exception: the CSS that hid the
+  sidebar expand control's default glyph and overlaid a Material Symbols `menu`
+  hamburger (☰, `\e5d2`) via `::after`. The control now shows Streamlit's
+  native `»` (`keyboard_double_arrow_right`) chevron, which reads correctly as
+  "expand the rail to the right." The open toggle still works — only the glyph
+  changed. Tidied the surrounding `st.html` intro comment and the
+  `initial_sidebar_state` comment.
+- **`CLAUDE.md`** — dropped exception 1 (burger glyph) from the Theming list
+  and renumbered (sticky bar → 1, skeletons → 2, nav rail → 3); updated the
+  Navigation section's `☰`→`»` references and the exception cross-link.
+- **Live-verified**: the expand control reports glyph
+  `keyboard_double_arrow_right`, `visibility:visible`, `::after content:none`
+  (overlay gone); the drawer still opens (`aria-expanded` → true); no errors.
+
+## 19. One nav toggle, not two
+
+**Prompt:**
+
+> the problem is now, that there are two ways to open the navigation: on the
+> main top bar and when the right bar is hovered on theres the same symbol
+> again
+
+**Summary of changes:**
+
+- Diagnosed (headless Chrome) that the rail exposed **two** toggles: the
+  toolbar `stExpandSidebarButton` (`»`, always visible, opens the drawer) and
+  the sidebar's own `stSidebarCollapseButton` (`«`), which Streamlit keeps
+  `visibility:hidden` but **reveals on hover** of the rail — a redundant second
+  control (and a left-pointing « reads as "collapse," not "open").
+- **`app.py`** — added one rule to the nav-rail CSS block:
+  `section[data-testid="stSidebar"][aria-expanded="false"]
+  [data-testid="stSidebarCollapseButton"] { display: none !important; }`.
+  This overrides the hover-reveal, so in rail mode only the toolbar `»` shows;
+  in the expanded drawer (`aria-expanded="true"`) the rule doesn't apply, so
+  the « stays as the close button. Result: exactly one toggle per state.
+- **`CLAUDE.md`** — noted the hidden hover-toggle in Theming exception 3.
+- **Live-verified**: rail (no hover *and* hover) → collapse button
+  `display:none`, only `»` visible; drawer → « visible (`display:block`,
+  `aria-expanded=true`); no page errors.
+
+## 20. Morphing ☰/✕ toggle inside the menu; drop the top-bar control
+
+**Prompt:**
+
+> add the burger menu icon inside the left menu. when the menu is closed its
+> the burger menu icon, when its opened the icon morphs into an X. remove the
+> whole left menu logic from the top bar
+
+**Summary of changes:**
+
+- Established (headless Chrome) that `stSidebarCollapseButton` is a **real
+  two-way toggle** — when genuinely clickable it expands while collapsed and
+  collapses while expanded (the prior "no-op" was its own `display:none`
+  swallowing the React click). Since it lives **inside** the sidebar and is a
+  single element, it can host the morphing glyph — no JS needed.
+- **`app.py`** nav-rail CSS:
+  - Reversed entry #19: instead of hiding the in-menu collapse button, force it
+    `visibility:visible` in the rail and centre it at the top of the icon
+    column (`stSidebarHeader { justify-content:center }`).
+  - **Removed the top-bar control**: `[data-testid="stExpandSidebarButton"]
+    { display:none !important }`.
+  - **Morphing glyph**: hide the native chevron; put `menu` (`\e5d2`) on the
+    icon span's `::before` and `close` (`\e5cd`) on `::after`; cross-fade +
+    quarter-rotate them by `aria-expanded` so closed shows ☰ and open shows ✕.
+- **`CLAUDE.md`** — updated the Navigation section and Theming exception 3 for
+  the single in-menu morphing toggle.
+- **Live-verified**: rail (`aria=false`) → toolbar expand button `display:none`,
+  ☰ shown (`::before` opacity 1, `::after` 0), centred (cx≈38 in the rail);
+  open (`aria=true`) → ✕ shown (opacity flips), at the drawer's top-right
+  (cx≈266); clicking the in-menu button toggles **both** ways; no page errors.
+
+## 21. Fix: sticky device selector loses full-width after a page round-trip
+
+**Prompt:**
+
+> ive found a bug with the sticky device selector. when i switch a page and
+> return to the dashboard the sticky device selector is not full width anymore
+
+**Diagnosis** (reproduced with headless Chrome): the Dashboard's sticky-bar
+watcher runs in a `components.html` iframe. Switching pages **destroys** that
+iframe, so its scroll listener + `ResizeObserver` + `MutationObserver` (all
+owned by the iframe's JS context) die — but `stMain` **persists** across the
+SPA navigation (confirmed: same stamped element on return). On return a new
+iframe ran, but the old guards (`stMain.__ovBound`, `window.parent.__ovStickyInit`)
+were still `true` on those persistent nodes, so it **skipped re-binding** —
+leaving a dead scroll listener. Scrolling no longer triggered `sync()`, so the
+bar never got its full-bleed geometry (measured `stuck:false`, `barW 1223` vs
+the full `1373` after return).
+
+**Fix** (`app_pages/dashboard.py`): the watcher no longer gates on persistent-DOM
+flags. Every iframe run re-binds fresh in its own live context, first tearing
+down the previous run's bindings via refs parked on the persistent nodes:
+`stMain.__ovSync` (compare-and-swap the scroll listener — also prevents
+stacking within a run), `stMain.__ovRO` (disconnect + re-arm the
+`ResizeObserver`), and `window.parent.__ovMO` (disconnect the prior, now-dead
+`MutationObserver`). Updated the sticky-bar note in CLAUDE.md (Theming
+exception 1).
+
+**Live-verified**: after returning from Map/Time Series/Devices the bar is
+full-width again (`stuck:true`, `barW == mainClientW == 1373`) on **every**
+round-trip, and a viewport resize after a round-trip still re-syncs the width
+(1133 == 1133) — i.e. the `ResizeObserver` is alive too. No page errors.
