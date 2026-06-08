@@ -435,3 +435,81 @@ Newest entries are appended at the bottom.
   (24 h / 7 d / 30 d / All); deltas are period-over-period. Confirmed the
   "24 h" no-delta case is honest — the 24–48 h-before window genuinely has 0
   rows (a data gap), so no trend arrow is shown.
+
+## 12. Off-white page canvas + borderless white cards
+
+**Prompt:**
+
+> i want you to change the way the outline boxes behave. first of all use an
+> offwhite color for the background of the page. then remove the stroke from
+> boxes and color them full white.
+
+**Summary of changes:**
+
+- **Page canvas → off-white.** `.streamlit/config.toml`: light-theme
+  `backgroundColor` `#FFFFFF → #F1F3F7`. Dark theme unchanged.
+- **Boxes → solid white, no stroke.** Streamlit's bordered containers,
+  `st.metric(border=True)` tiles and `st.form(border=True)` are *transparent
+  with a 1px `borderColor` stroke* (verified in the 1.57 bundle —
+  `...border&&{border:1px solid borderColor}`, no fill), and `config.toml`
+  exposes **no** fill token for them. So the fill + stroke-removal go in the
+  existing documented `st.html(<style>)` block in **`app.py`**: the boxes get
+  `background-color: light-dark(#FFF, #1C2128)` (dark mode gets an elevated
+  surface, not white), `border-color: transparent`, and a faint shadow so the
+  now-strokeless cards stay legible on the canvas.
+- **Robust, version-proof selectors** (not fragile emotion classes): the
+  stable public `[data-testid="stMetric"]` / `[data-testid="stForm"]` hooks,
+  plus the project's own `.st-key-*` convention. Added `key="box_*"` to the
+  seven bordered `st.container()`s (`app_pages/dashboard.py` ×5,
+  `app_pages/timeseries.py`, `src/components/kpi.py`'s `aqi_tile`) and
+  matched `[class*="st-key-box_"]`; the filter bars (`*_bar`) are folded in
+  too (`ov_bar` keeps its sticky background/scroll-shadow, just loses its
+  stroke).
+- **Verified** by running the app and screenshotting both themes: light =
+  off-white canvas with solid-white borderless cards; dark = dark canvas with
+  elevated `#1C2128` cards. No stroke on metric tiles, content cards or filter
+  bars in either mode.
+
+## 13. Fill the Streamlit top bar white too
+
+**Prompt:**
+
+> make the streamlit topbar also filled white
+
+**Summary of changes:**
+
+- **`app.py`**: added `[data-testid="stHeader"] { background-color:
+  light-dark(#FFF, #1C2128); }` to the existing `st.html(<style>)` block.
+  Streamlit's fixed top bar is transparent by default, so it was showing the
+  off-white canvas through it; now it matches the cards (white in light, the
+  elevated surface in dark). No config token exists for the header, so this
+  belongs with the other chrome CSS.
+- **Verified** via a fresh light-mode screenshot: the top bar (burger menu /
+  Deploy / ⋮) is solid white, distinct from the off-white canvas below.
+
+## 14. Type icons in the sensor dropdown
+
+**Prompt:**
+
+> inside the dropdown menu, the devices have different types. Use
+> corresponding icons for the device types on the left side of the type
+> inside the drop down
+
+**Summary of changes:**
+
+- **`src/components/filter_bar.py`**: in the grouped (`group_by_type`) sensor
+  picker, each option now leads with a per-type glyph: 📍 Stationary, 🚗 Mobile,
+  🔬 Specialty, 🌐 External, 📌 POI (`_TYPE_ICON` map + `_TYPE_ICON_FALLBACK`).
+  Added a local `_fmt` `format_func` used by both the selectbox and the
+  multiselect; the icon is applied **only in the picker display** — the
+  active-filter chips and the returned `FilterState` keep the icon-free label,
+  and the hero title is unaffected (it builds from `device_label`, not the
+  picker label).
+- **Why emoji, not Material icons:** verified by a scratch app + screenshot
+  that `st.selectbox`/`multiselect` render their option labels as **plain
+  text** — a `:material/…:` shortcode shows literally, whereas emoji render
+  natively. (CLAUDE.md prefers Material icons, but they don't work in option
+  labels.)
+- **Verified** on the live dropdown: 📍/🚗/🔬/🌐 all render in front of their
+  type (closed box too). POI has no readings so it's excluded from the picker
+  pool (`has_data`) — its icon is defined for completeness only.

@@ -116,7 +116,7 @@ _BUCKETS: dict[str, int | None] = {
 # session value is not among the options) — same pattern as ts_sensors.
 if st.session_state.get("ts_bucket") not in _BUCKETS:
     st.session_state.pop("ts_bucket", None)
-with st.container(border=True):
+with st.container(border=True, key="box_ts_controls"):
     c_bucket, c_smooth, c_raw = st.columns([0.34, 0.4, 0.26], vertical_alignment="center")
     with c_bucket:
         bucket_label = st.selectbox(

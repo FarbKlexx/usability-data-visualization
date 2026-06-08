@@ -144,6 +144,40 @@ st.html(
         border-radius: 0;
         box-shadow: 0 8px 18px -8px rgba(0, 0, 0, 0.38);
     }
+
+    /* Borderless white cards on the off-white canvas.
+       Streamlit's bordered containers, st.metric tiles and st.form are
+       transparent + a 1px borderColor stroke, and config.toml exposes no
+       fill token for them — so the page canvas goes off-white via
+       backgroundColor (config), and the boxes get a solid fill + the stroke
+       removed here. The fill is light-dark() so dark mode gets an elevated
+       surface, not white. Selectors are stable public hooks (stMetric /
+       stForm testids) + the project's own .st-key-* keys (box_* on bordered
+       st.container()s, *_bar on filter bars), so this rides out Streamlit's
+       internal class churn. A faint shadow keeps the now-strokeless cards
+       legible against the canvas. */
+    [data-testid="stMetric"],
+    [data-testid="stForm"],
+    [class*="st-key-box_"],
+    .st-key-ts_bar,
+    .st-key-cmp_bar {
+        background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
+        border-color: transparent;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04),
+                    0 1px 3px rgba(16, 24, 40, 0.06);
+    }
+    /* The sticky Dashboard filter bar keeps its own background + scroll-state
+       shadow (above); just drop its stroke to match the other cards. */
+    .st-key-ov_bar {
+        border-color: transparent;
+    }
+
+    /* Streamlit's fixed top bar is transparent by default, so it shows the
+       off-white canvas through it. Fill it to match the cards (white in light,
+       the elevated surface in dark) — no config token exists for it. */
+    [data-testid="stHeader"] {
+        background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
+    }
     </style>
     """
 )

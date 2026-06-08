@@ -7,7 +7,7 @@
 [theme]
 base = "light"
 primaryColor = "#0072B2"               # Okabe-Ito blue
-backgroundColor = "#FFFFFF"
+backgroundColor = "#F1F3F7"            # off-white page canvas (cards sit on it as solid white)
 secondaryBackgroundColor = "#F4F6F8"
 textColor = "#1F2328"
 linkColor = "#0072B2"

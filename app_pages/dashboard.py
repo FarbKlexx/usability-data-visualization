@@ -92,7 +92,7 @@ vals = {r.metric: (r.value, r.delta) for r in summary_df.itertuples()}
 band = caqi_band(vals.get("pm2_5", (None,))[0], vals.get("pm10_0", (None,))[0])
 
 # === ZONE 1: hero card — names the device + states the verdict (focal point) =
-with st.container(border=True):
+with st.container(border=True, key="box_hero"):
     hL, hR = st.columns([0.62, 0.38], gap="medium", vertical_alignment="center")
     with hL:
         if band is None:
@@ -134,7 +134,7 @@ if is_mobile:
     gap_seconds = int(st.session_state.get("ov_route_gap", 3600))
     routes = load_routes(table, gap_seconds=gap_seconds, start=fs.start, end=fs.end)
     with cL:
-        with st.container(border=True):
+        with st.container(border=True, key="box_routemap"):
             st.markdown("**:material/route: Routes travelled**", help=_ROUTEMAP_HELP)
             if routes.empty:
                 st.info(
@@ -154,7 +154,7 @@ if is_mobile:
                 help="Full depth: aggregation bucket, rolling average, thresholds, annotations, flags.",
             )
     with cR:
-        with st.container(border=True):
+        with st.container(border=True, key="box_tripstats"):
             st.markdown("**:material/insights: This window**")
             if routes.empty:
                 st.caption("No trips in range.")
@@ -169,7 +169,7 @@ if is_mobile:
 else:
     ts_df, ts_hidden, _ = load_timeseries(table, ("pm2_5", "pm10_0"), fs.start, fs.end)
     with cL:
-        with st.container(border=True):
+        with st.container(border=True, key="box_pmtrend"):
             st.markdown("**:material/timeline: Particulate matter over time**", help=_ZOOM_HELP)
             st.plotly_chart(charts.line_chart(ts_df, ("pm2_5", "pm10_0"), height=320), **_PLOT)
             if (notice := hidden_notice(ts_hidden)):
@@ -180,7 +180,7 @@ else:
                 help="Full depth: aggregation bucket, rolling average, thresholds, annotations, flags.",
             )
     with cR:
-        with st.container(border=True):
+        with st.container(border=True, key="box_locmap"):
             st.markdown("**:material/location_on: Location**")
             loc_one = load_locations()
             loc_one = loc_one[

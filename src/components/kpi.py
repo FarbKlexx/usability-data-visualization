@@ -78,7 +78,7 @@ def metric_tile(
 
 def aqi_tile(band: CAQIBand | None) -> None:
     """Render the computed CAQI air-quality band as a tile."""
-    with st.container(border=True):
+    with st.container(border=True, key="box_aqi"):
         st.markdown(":material/speed: **Air quality**")
         if band is None:
             st.markdown(":gray-badge[:material/help: No data]")
