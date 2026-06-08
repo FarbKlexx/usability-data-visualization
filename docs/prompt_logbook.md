@@ -743,3 +743,37 @@ exception 1).
 full-width again (`stuck:true`, `barW == mainClientW == 1373`) on **every**
 round-trip, and a viewport resize after a round-trip still re-syncs the width
 (1133 == 1133) — i.e. the `ResizeObserver` is alive too. No page errors.
+
+## 22. Page name in the top header when the device selector sticks
+
+**Prompt:**
+
+> when the device selector becomes sticky i want the name of the page appear
+> above it inside the streamlit top bar
+
+**Summary of changes:**
+
+- A scroll-condense title: when the Dashboard filter bar sticks, the page name
+  surfaces in the fixed Streamlit top header, aligned above the bar.
+- **Moved the sticky-bar watcher from `dashboard.py` to a global
+  `components.html` at the end of `app.py`** and extended it. It now also
+  injects a `.ov-header-title` element as a child of `stHeader`, fills it with
+  the active nav link's clean `span[label]` text, aligns its left edge to the
+  main column (`mainLeft − headerLeft`, since the header's positioned origin is
+  offset by the rail/drawer width), and toggles `.ov-visible` with the bar's
+  stuck state. **Global on purpose:** the title lives in the persistent header,
+  so the watcher must run on *every* page to hide it when `.st-key-ov_bar` is
+  absent — otherwise a stale "Dashboard" would linger after scrolling the hub
+  then navigating away.
+- **`app.py`**: added `import streamlit.components.v1 as components`, the
+  `.ov-header-title` CSS (theme-safe `light-dark()` colour, fade+rise
+  transition, hidden/inert until `.ov-visible`), and the watcher block.
+- **`dashboard.py`**: removed its watcher block and the now-unused `components`
+  import (left a pointer comment to app.py).
+- **`CLAUDE.md`**: updated Theming exception 1 (watcher now global; header-title
+  behaviour; why-global note).
+- **Live-verified** (headless Chrome): at rest the title is `opacity:0`; on
+  scroll it shows ("Dashboard", `ov-visible`, `y≈28` in the header, left edge
+  `x=68` == the bar's `x=68`); scroll-up hides it; navigating to **Map while
+  scrolled** hides it (no orphan); returning + scrolling shows it again. No
+  page errors.

@@ -12,6 +12,7 @@ Run locally with::
 from __future__ import annotations
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Air Quality Dashboard",
@@ -164,6 +165,32 @@ st.html(
        the elevated surface in dark) — no config token exists for it. */
     [data-testid="stHeader"] {
         background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
+    }
+
+    /* Page name surfaced in the fixed top header once the Dashboard filter bar
+       sticks (a scroll-condense title). The watcher (end of app.py) injects it
+       as a child of the header, sets its left edge to the main column so it
+       sits over the stuck bar, and toggles `.ov-visible`. Hidden + inert until
+       then. Theme-safe colour via light-dark(). */
+    .ov-header-title {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        padding-left: 1rem;
+        display: flex;
+        align-items: center;
+        font-weight: 600;
+        font-size: 1.05rem;
+        color: light-dark(rgb(31, 35, 40), rgb(230, 237, 243));
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transform: translateY(3px);
+        transition: opacity .18s ease, transform .18s ease;
+    }
+    .ov-header-title.ov-visible {
+        opacity: 1;
+        transform: translateY(0);
     }
 
     /* Skeleton loaders — content-shaped placeholders shown while data loads.
@@ -325,3 +352,96 @@ st.html(
 )
 
 page.run()
+
+# Sticky Dashboard filter bar + scroll-condense header title. Runs GLOBALLY
+# (in the entrypoint, on every page) — not in dashboard.py — because the header
+# title is a child of the persistent top header, so something must run on the
+# *other* pages too to hide it (else a stale "Dashboard" would linger after you
+# scroll the hub then navigate away). Done in JS (not a CSS scroll-timeline) so
+# it works in Safari/Firefox. In a 0-height same-origin iframe reaching the
+# parent DOM. The iframe can be destroyed/recreated on navigation, so it must
+# NOT gate re-binding on flags parked on persistent DOM — each run re-binds
+# fresh in its own live context, tearing down the prior run's listener
+# (stMain.__ovSync), ResizeObserver (stMain.__ovRO) and MutationObserver
+# (window.parent.__ovMO) first. On non-Dashboard pages `.st-key-ov_bar` is
+# absent, so sync() just hides the title and returns.
+components.html(
+    """
+    <script>
+    (function () {
+      const W = window.parent;
+      const doc = W.document;
+      const STICK_TOP = 58;  /* matches the CSS sticky offset (top: 3.5rem) */
+      function headerTitle() {
+        let t = doc.querySelector('.ov-header-title');
+        if (!t) {
+          const header = doc.querySelector('[data-testid="stHeader"]');
+          if (!header) return null;
+          t = doc.createElement('div');
+          t.className = 'ov-header-title';
+          header.appendChild(t);
+        }
+        return t;
+      }
+      function sync() {
+        const bar = doc.querySelector('.st-key-ov_bar');
+        const main = doc.querySelector('[data-testid="stMain"]');
+        const title = headerTitle();
+        if (!bar || !main) {            /* not the Dashboard -> never show the title */
+          if (title) title.classList.remove('ov-visible');
+          return;
+        }
+        const stuck = bar.getBoundingClientRect().top <= STICK_TOP;
+        bar.classList.toggle('ov-stuck', stuck);
+        if (title) {
+          /* clean page name from the active nav link's label (no icon glyph) */
+          const active = doc.querySelector('[data-testid="stSidebarNavLink"][aria-current="page"] span[label]');
+          const name = (active && (active.getAttribute('label') || active.textContent.trim())) || 'Dashboard';
+          if (title.textContent !== name) title.textContent = name;
+          /* align the title's left edge with the main column (= the stuck bar's
+             full-bleed left). The header's own positioned origin is offset by
+             the rail/drawer width, so subtract it. */
+          const header = doc.querySelector('[data-testid="stHeader"]');
+          const headerLeft = header ? header.getBoundingClientRect().left : 0;
+          title.style.left = Math.round(main.getBoundingClientRect().left - headerLeft) + 'px';
+          title.classList.toggle('ov-visible', stuck);
+        }
+        if (stuck) {
+          /* span the main content column (NOT the viewport), so the bar never
+             slides under an open sidebar; clientWidth excludes the scrollbar. */
+          const wrap = bar.parentElement;
+          const leftGutter = wrap.getBoundingClientRect().left - main.getBoundingClientRect().left;
+          const w = main.clientWidth;
+          bar.style.width = w + 'px';
+          bar.style.maxWidth = w + 'px';
+          bar.style.marginLeft = (-leftGutter) + 'px';
+        } else {
+          bar.style.width = '';
+          bar.style.maxWidth = '';
+          bar.style.marginLeft = '';
+        }
+      }
+      function bind() {
+        const sc = doc.querySelector('[data-testid="stMain"]');
+        /* `__ovSync` holds the live sync fn of whichever iframe bound this node;
+           a different value means a fresh iframe / new node -> (re)bind without
+           stacking listeners. */
+        if (sc && sc.__ovSync !== sync) {
+          if (sc.__ovSync) sc.removeEventListener('scroll', sc.__ovSync);
+          sc.addEventListener('scroll', sync, { passive: true });
+          sc.__ovSync = sync;
+          if (sc.__ovRO) { try { sc.__ovRO.disconnect(); } catch (e) {} }
+          sc.__ovRO = new ResizeObserver(sync);  /* fires on sidebar open/close + resize */
+          sc.__ovRO.observe(sc);
+        }
+        sync();
+      }
+      if (W.__ovMO) { try { W.__ovMO.disconnect(); } catch (e) {} }
+      W.__ovMO = new MutationObserver(bind);
+      W.__ovMO.observe(doc.documentElement, { childList: true, subtree: true });
+      bind();
+    })();
+    </script>
+    """,
+    height=0,
+)
