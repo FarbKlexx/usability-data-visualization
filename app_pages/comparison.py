@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.components import charts, filter_bar
+from src.components import charts, filter_bar, skeleton
 from src.components.filter_bar import device_label
 from src.data import available_metrics, load_comparison, load_devices
 from src.utils.metrics import get
@@ -61,60 +61,67 @@ def render_compare() -> None:
         help="Only measures available on every selected sensor are offered.",
     )
 
+    # Skeleton the chart region while the multi-sensor aggregation runs, then
+    # swap the real averages/distribution in (same slot → no layout jump).
+    results_ph = st.empty()
+    with results_ph.container():
+        skeleton.block(360)
+
     stats = load_comparison(tuple(fs.tables), metric_key, fs.start, fs.end)
     if stats.empty or stats["n"].fillna(0).sum() == 0:
-        st.warning("No readings for these sensors in the selected range.", icon=":material/info:")
+        with results_ph.container():
+            st.warning("No readings for these sensors in the selected range.", icon=":material/info:")
         return
 
     label_map = {r["table_name"]: device_label(r) for _, r in devices.iterrows()}
-
     hidden_total = int(stats["n_hidden"].fillna(0).sum())
-    if hidden_total:
-        st.caption(
-            f":material/visibility_off: {hidden_total} reading(s) at/above the measuring range "
-            f"were excluded from the statistics."
-        )
-
-    tab_avg, tab_dist = st.tabs([":material/bar_chart: Averages", ":material/box: Distribution"])
-    with tab_avg:
-        st.plotly_chart(
-            charts.grouped_bar(stats, metric_key, label_map),
-            theme="streamlit", width="stretch", config={"displaylogo": False},
-        )
-        st.caption("Bars show the mean over the selected range; labels give the exact value.")
-    with tab_dist:
-        st.plotly_chart(
-            charts.box_from_stats(stats, metric_key, label_map),
-            theme="streamlit", width="stretch", config={"displaylogo": False},
-        )
-        st.caption("Box = inter-quartile range with median; whiskers reach the min/max.")
-
     show = stats.assign(sensor=stats["table_name"].map(lambda t: label_map.get(t, t)))
 
-    # A6: export the current comparison (post-filter) as CSV.
-    st.download_button(
-        "Download comparison (CSV)",
-        data=show[["sensor", "n", "avg", "min", "q1", "median", "q3", "max", "n_hidden"]]
-        .to_csv(index=False)
-        .encode("utf-8"),
-        file_name=f"comparison_{get(metric_key).key}_{fs.range_key.replace(' ', '')}.csv",
-        mime="text/csv", icon=":material/download:",
-        help="The per-sensor summary statistics currently shown.",
-    )
+    with results_ph.container():
+        if hidden_total:
+            st.caption(
+                f":material/visibility_off: {hidden_total} reading(s) at/above the measuring range "
+                f"were excluded from the statistics."
+            )
 
-    with st.expander("Show the numbers"):
-        st.dataframe(
-            show[["sensor", "n", "avg", "min", "q1", "median", "q3", "max", "n_hidden"]],
-            hide_index=True, width="stretch",
-            column_config={
-                "sensor": "Sensor",
-                "n": st.column_config.NumberColumn("n", format="%d"),
-                "avg": st.column_config.NumberColumn("mean", format="%.1f"),
-                "q1": st.column_config.NumberColumn("Q1", format="%.1f"),
-                "median": st.column_config.NumberColumn("median", format="%.1f"),
-                "q3": st.column_config.NumberColumn("Q3", format="%.1f"),
-                "min": st.column_config.NumberColumn("min", format="%.1f"),
-                "max": st.column_config.NumberColumn("max", format="%.1f"),
-                "n_hidden": st.column_config.NumberColumn("hidden", format="%d"),
-            },
+        tab_avg, tab_dist = st.tabs([":material/bar_chart: Averages", ":material/box: Distribution"])
+        with tab_avg:
+            st.plotly_chart(
+                charts.grouped_bar(stats, metric_key, label_map),
+                theme="streamlit", width="stretch", config={"displaylogo": False},
+            )
+            st.caption("Bars show the mean over the selected range; labels give the exact value.")
+        with tab_dist:
+            st.plotly_chart(
+                charts.box_from_stats(stats, metric_key, label_map),
+                theme="streamlit", width="stretch", config={"displaylogo": False},
+            )
+            st.caption("Box = inter-quartile range with median; whiskers reach the min/max.")
+
+        # A6: export the current comparison (post-filter) as CSV.
+        st.download_button(
+            "Download comparison (CSV)",
+            data=show[["sensor", "n", "avg", "min", "q1", "median", "q3", "max", "n_hidden"]]
+            .to_csv(index=False)
+            .encode("utf-8"),
+            file_name=f"comparison_{get(metric_key).key}_{fs.range_key.replace(' ', '')}.csv",
+            mime="text/csv", icon=":material/download:",
+            help="The per-sensor summary statistics currently shown.",
         )
+
+        with st.expander("Show the numbers"):
+            st.dataframe(
+                show[["sensor", "n", "avg", "min", "q1", "median", "q3", "max", "n_hidden"]],
+                hide_index=True, width="stretch",
+                column_config={
+                    "sensor": "Sensor",
+                    "n": st.column_config.NumberColumn("n", format="%d"),
+                    "avg": st.column_config.NumberColumn("mean", format="%.1f"),
+                    "q1": st.column_config.NumberColumn("Q1", format="%.1f"),
+                    "median": st.column_config.NumberColumn("median", format="%.1f"),
+                    "q3": st.column_config.NumberColumn("Q3", format="%.1f"),
+                    "min": st.column_config.NumberColumn("min", format="%.1f"),
+                    "max": st.column_config.NumberColumn("max", format="%.1f"),
+                    "n_hidden": st.column_config.NumberColumn("hidden", format="%d"),
+                },
+            )

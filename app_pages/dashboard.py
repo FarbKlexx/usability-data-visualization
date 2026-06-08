@@ -30,7 +30,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from app_pages.comparison import render_compare
-from src.components import charts, filter_bar
+from src.components import charts, filter_bar, skeleton
 from src.components.filter_bar import device_label
 from src.components.kpi import aqi_tile, metric_tile
 from src.data import (
@@ -85,14 +85,31 @@ device_name = device_label(drow)  # clean "name · city", no type prefix
 # Snapshot for the hero, the KPI strip and the CAQI verdict. Everything here
 # is the **mean over the selected range** (so the tiles change with the time
 # range), with the trend measured against the previous equal-length period.
+# The hero + the KPI strip share this one query, so we paint a content-shaped
+# skeleton in both slots *before* it runs and swap the values in afterwards —
+# the layout never jumps and the wait reads as "loading", not "broken".
 avg_label = "full-record average" if fs.range_key == "All" else f"{fs.range_key} average"
 prev_label = None if fs.range_key == "All" else f"previous {fs.range_key}"
+
+# === ZONE 1: hero card — names the device + states the verdict (focal point) =
+hero_ph = st.empty()
+with hero_ph.container(border=True, key="box_hero_skel"):
+    skeleton.hero()
+
+# === ZONE 2: KPI strip — lifted above the fold (was hidden in a tab) =========
+strip_cap = f":material/schedule: {avg_label[:1].upper()}{avg_label[1:]}"
+if prev_label:
+    strip_cap += f" · trend vs. {prev_label}"
+st.caption(strip_cap)
+strip_ph = st.empty()
+with strip_ph.container():
+    skeleton.tiles(len(HEADLINE_KPIS) + 1)  # headline measures + the CAQI tile
+
 summary_df, latest_ts = load_range_summary(table, fs.start, fs.end)
 vals = {r.metric: (r.value, r.delta) for r in summary_df.itertuples()}
 band = caqi_band(vals.get("pm2_5", (None,))[0], vals.get("pm10_0", (None,))[0])
 
-# === ZONE 1: hero card — names the device + states the verdict (focal point) =
-with st.container(border=True, key="box_hero"):
+with hero_ph.container(border=True, key="box_hero"):
     hL, hR = st.columns([0.62, 0.38], gap="medium", vertical_alignment="center")
     with hL:
         if band is None:
@@ -114,12 +131,7 @@ with st.container(border=True, key="box_hero"):
                 value_desc=avg_label, baseline_label=prev_label or "previous period",
             )
 
-# === ZONE 2: KPI strip — lifted above the fold (was hidden in a tab) =========
-strip_cap = f":material/schedule: {avg_label[:1].upper()}{avg_label[1:]}"
-if prev_label:
-    strip_cap += f" · trend vs. {prev_label}"
-st.caption(strip_cap)
-with st.container(horizontal=True):
+with strip_ph.container(horizontal=True):
     for key in (k for k in HEADLINE_KPIS if k in vals):
         metric_tile(
             key, *vals.get(key, (None, None)),
@@ -128,26 +140,21 @@ with st.container(horizontal=True):
     aqi_tile(band)
 
 # === ZONE 3: bento — primary visual beside its spatial/trip context ==========
+# Each cell shows a chart/map/stat-shaped skeleton while its loader runs. Both
+# cells of the row are skeletoned *before* either query runs, so the whole
+# bento reads as "loading" at once rather than one cell at a time, then each
+# swaps to real content as its data arrives. Static chrome (the box + its
+# title + the hand-off button) renders immediately — only the data area waits.
 routes = pd.DataFrame()  # populated for mobile; referenced again in the Routes tab
 cL, cR = st.columns([2, 1], gap="medium", vertical_alignment="top")
 if is_mobile:
     gap_seconds = int(st.session_state.get("ov_route_gap", 3600))
-    routes = load_routes(table, gap_seconds=gap_seconds, start=fs.start, end=fs.end)
     with cL:
         with st.container(border=True, key="box_routemap"):
             st.markdown("**:material/route: Routes travelled**", help=_ROUTEMAP_HELP)
-            if routes.empty:
-                st.info(
-                    "No routes in the selected range — widen the time range (Reset, or try All).",
-                    icon=":material/info:",
-                )
-            else:
-                route_ids = [int(r) for r in sorted(routes["route_id"].unique())]
-                sel = st.session_state.get("ov_route_sel")
-                selected_route = sel if isinstance(sel, int) and sel in route_ids else None
-                st.plotly_chart(charts.route_map(routes, selected_route=selected_route, height=420), **_MAP_PLOT)
-                scope = "all routes" if selected_route is None else f"route {selected_route + 1}"
-                st.caption(f":material/route: {len(route_ids)} trip(s), {len(routes):,} points (showing {scope}).")
+            routemap_ph = st.empty()
+            with routemap_ph.container():
+                skeleton.block(420)
             st.button(
                 "Open in Time Series", icon=":material/open_in_full:",
                 on_click=hand_off_to_timeseries, args=(table,),
@@ -156,24 +163,42 @@ if is_mobile:
     with cR:
         with st.container(border=True, key="box_tripstats"):
             st.markdown("**:material/insights: This window**")
-            if routes.empty:
-                st.caption("No trips in range.")
-            else:
-                mean_pm = routes["pm2_5"].mean()
-                st.metric("Trips", int(routes["route_id"].nunique()), border=True)
-                st.metric("GPS points", f"{len(routes):,}", border=True)
-                st.metric(
-                    "Mean PM2.5", "–" if pd.isna(mean_pm) else f"{mean_pm:.1f} µg/m³",
-                    border=True, help="Mean PM2.5 across all points in the selected range.",
-                )
+            tripstats_ph = st.empty()
+            with tripstats_ph.container():
+                skeleton.tiles_stack(3)
+    # Both skeletons painted; run the (shared) query and swap both cells in.
+    routes = load_routes(table, gap_seconds=gap_seconds, start=fs.start, end=fs.end)
+    with routemap_ph.container():
+        if routes.empty:
+            st.info(
+                "No routes in the selected range — widen the time range (Reset, or try All).",
+                icon=":material/info:",
+            )
+        else:
+            route_ids = [int(r) for r in sorted(routes["route_id"].unique())]
+            sel = st.session_state.get("ov_route_sel")
+            selected_route = sel if isinstance(sel, int) and sel in route_ids else None
+            st.plotly_chart(charts.route_map(routes, selected_route=selected_route, height=420), **_MAP_PLOT)
+            scope = "all routes" if selected_route is None else f"route {selected_route + 1}"
+            st.caption(f":material/route: {len(route_ids)} trip(s), {len(routes):,} points (showing {scope}).")
+    with tripstats_ph.container():
+        if routes.empty:
+            st.caption("No trips in range.")
+        else:
+            mean_pm = routes["pm2_5"].mean()
+            st.metric("Trips", int(routes["route_id"].nunique()), border=True)
+            st.metric("GPS points", f"{len(routes):,}", border=True)
+            st.metric(
+                "Mean PM2.5", "–" if pd.isna(mean_pm) else f"{mean_pm:.1f} µg/m³",
+                border=True, help="Mean PM2.5 across all points in the selected range.",
+            )
 else:
-    ts_df, ts_hidden, _ = load_timeseries(table, ("pm2_5", "pm10_0"), fs.start, fs.end)
     with cL:
         with st.container(border=True, key="box_pmtrend"):
             st.markdown("**:material/timeline: Particulate matter over time**", help=_ZOOM_HELP)
-            st.plotly_chart(charts.line_chart(ts_df, ("pm2_5", "pm10_0"), height=320), **_PLOT)
-            if (notice := hidden_notice(ts_hidden)):
-                st.caption(f":material/visibility_off: {notice}")
+            pmtrend_ph = st.empty()
+            with pmtrend_ph.container():
+                skeleton.block(320)
             st.button(
                 "Open in Time Series", icon=":material/open_in_full:",
                 on_click=hand_off_to_timeseries, args=(table,),
@@ -182,18 +207,28 @@ else:
     with cR:
         with st.container(border=True, key="box_locmap"):
             st.markdown("**:material/location_on: Location**")
-            loc_one = load_locations()
-            loc_one = loc_one[
-                (loc_one["table_name"] == table) & loc_one["lon"].notna() & loc_one["lat"].notna()
-            ]
-            if loc_one.empty:
-                st.caption(":material/location_off: No location recorded for this sensor.")
-            else:
-                st.plotly_chart(
-                    charts.map_figure(charts.build_location_markers(loc_one), height=320, show_text=True),
-                    **_MAP_PLOT,
-                )
+            locmap_ph = st.empty()
+            with locmap_ph.container():
+                skeleton.block(320)
             st.page_link("app_pages/map.py", label="Full map", icon=":material/open_in_full:")
+    # Both skeletons painted; load each cell and swap it in.
+    ts_df, ts_hidden, _ = load_timeseries(table, ("pm2_5", "pm10_0"), fs.start, fs.end)
+    with pmtrend_ph.container():
+        st.plotly_chart(charts.line_chart(ts_df, ("pm2_5", "pm10_0"), height=320), **_PLOT)
+        if (notice := hidden_notice(ts_hidden)):
+            st.caption(f":material/visibility_off: {notice}")
+    loc_one = load_locations()
+    loc_one = loc_one[
+        (loc_one["table_name"] == table) & loc_one["lon"].notna() & loc_one["lat"].notna()
+    ]
+    with locmap_ph.container():
+        if loc_one.empty:
+            st.caption(":material/location_off: No location recorded for this sensor.")
+        else:
+            st.plotly_chart(
+                charts.map_figure(charts.build_location_markers(loc_one), height=320, show_text=True),
+                **_MAP_PLOT,
+            )
 
 st.divider()
 
@@ -273,41 +308,51 @@ with tabs["correlation"]:
     if len(corr_measures) < 2:
         st.info("Pick at least two measures to see whether they relate.", icon=":material/info:")
     else:
+        # Skeleton the verdict + chart while the paired-readings query runs.
+        corr_ph = st.empty()
+        with corr_ph.container():
+            skeleton.lines(widths=("55%", "45%"), height="1.1rem")
+            skeleton.block(360)
         corr_df, corr_hidden, _ = load_timeseries(table, tuple(corr_measures), fs.start, fs.end, clean=True)
-        frame = build_comparison_frame(corr_df, corr_measures)
-        if len(frame) < 2:
-            st.warning("Not enough paired readings in this range to compare these measures.", icon=":material/info:")
-        else:
-            for a, b in itertools.combinations(corr_measures, 2):
-                res = compute_correlation(frame, (a, b))
-                v = correlation_verdict(res.r)
-                prefix = f"{v.arrow} " if v.arrow else ""
-                r_text = "–" if res.r is None else f"{res.r:+.2f}"
-                st.markdown(
-                    f":{v.badge}-badge[{prefix}{v.label}] "
-                    f"**{get(a).short_label} ↔ {get(b).short_label}** · r = {r_text} · n = {res.n:,}",
-                    help="Strength by |r|: <0.3 none/weak · 0.3–0.7 moderate · >0.7 strong. "
-                         "Sign (↑/↓) = rise together vs. move oppositely. Correlation is not causation.",
+        with corr_ph.container():
+            frame = build_comparison_frame(corr_df, corr_measures)
+            if len(frame) < 2:
+                st.warning(
+                    "Not enough paired readings in this range to compare these measures.",
+                    icon=":material/info:",
                 )
-            if len(corr_measures) == 2:
-                a, b = corr_measures
-                view = st.segmented_control(
-                    "Chart", options=["Scatter", "Overlay"], key="ov_corr_view", default="Scatter",
-                    help="Scatter shows the relationship itself; Overlay compares the curve shapes over time.",
-                ) or "Scatter"
-                if view == "Scatter":
-                    res = compute_correlation(frame, (a, b))
-                    st.plotly_chart(
-                        charts.scatter_correlation(frame, a, b, slope=res.slope, intercept=res.intercept), **_PLOT
-                    )
-                else:
-                    norm, ranges = normalize_frame(frame, corr_measures)
-                    st.plotly_chart(charts.normalized_overlay(norm, corr_measures, ranges), **_PLOT)
             else:
-                res = compute_correlation(frame, tuple(corr_measures))
-                st.plotly_chart(charts.correlation_heatmap(res.matrix), **_PLOT)
-            if (notice := hidden_notice(corr_hidden)):
-                st.caption(f":material/visibility_off: {notice}")
+                for a, b in itertools.combinations(corr_measures, 2):
+                    res = compute_correlation(frame, (a, b))
+                    v = correlation_verdict(res.r)
+                    prefix = f"{v.arrow} " if v.arrow else ""
+                    r_text = "–" if res.r is None else f"{res.r:+.2f}"
+                    st.markdown(
+                        f":{v.badge}-badge[{prefix}{v.label}] "
+                        f"**{get(a).short_label} ↔ {get(b).short_label}** · r = {r_text} · n = {res.n:,}",
+                        help="Strength by |r|: <0.3 none/weak · 0.3–0.7 moderate · >0.7 strong. "
+                             "Sign (↑/↓) = rise together vs. move oppositely. Correlation is not causation.",
+                    )
+                if len(corr_measures) == 2:
+                    a, b = corr_measures
+                    view = st.segmented_control(
+                        "Chart", options=["Scatter", "Overlay"], key="ov_corr_view", default="Scatter",
+                        help="Scatter shows the relationship itself; Overlay compares the curve shapes over time.",
+                    ) or "Scatter"
+                    if view == "Scatter":
+                        res = compute_correlation(frame, (a, b))
+                        st.plotly_chart(
+                            charts.scatter_correlation(frame, a, b, slope=res.slope, intercept=res.intercept),
+                            **_PLOT,
+                        )
+                    else:
+                        norm, ranges = normalize_frame(frame, corr_measures)
+                        st.plotly_chart(charts.normalized_overlay(norm, corr_measures, ranges), **_PLOT)
+                else:
+                    res = compute_correlation(frame, tuple(corr_measures))
+                    st.plotly_chart(charts.correlation_heatmap(res.matrix), **_PLOT)
+                if (notice := hidden_notice(corr_hidden)):
+                    st.caption(f":material/visibility_off: {notice}")
 
 # Publish the current view to the URL (shareable/bookmarkable).
 publish_query_params(

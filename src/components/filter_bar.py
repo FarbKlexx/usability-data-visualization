@@ -66,20 +66,6 @@ def _label_map(pool: pd.DataFrame) -> dict[str, str]:
 # Type display order for the grouped picker (most data-rich kinds first).
 _TYPE_RANK = {"Stationary": 0, "Mobile": 1, "Specialty": 2, "External": 3, "POI": 4}
 
-# Per-type glyph shown left of each option in the grouped picker. These are
-# emoji on purpose: st.selectbox/multiselect render their option labels as
-# plain text, so a Material `:material/…:` shortcode would show *literally*
-# (verified) — emoji render natively. Used in the picker display only; the
-# chips and FilterState keep the icon-free label.
-_TYPE_ICON = {
-    "Stationary": "📍",
-    "Mobile": "🚗",
-    "Specialty": "🔬",
-    "External": "🌐",
-    "POI": "📌",
-}
-_TYPE_ICON_FALLBACK = "🔹"
-
 
 def filter_bar(
     devices: pd.DataFrame,
@@ -111,22 +97,15 @@ def filter_bar(
 
     options = list(pool["table_name"])
     labels = _label_map(pool)
-    type_by_table: dict[str, str] = {}
     if group_by_type and "ootype" in pool.columns:
         type_by_table = dict(zip(pool["table_name"], pool["ootype"]))
+        # Prefix the type word (no icon) so kinds stay visible but unmixed; the
+        # active-filter chips and the returned FilterState keep the bare label.
         labels = {t: f"{type_by_table.get(t, 'Other')} · {lbl}" for t, lbl in labels.items()}
 
     def _fmt(t: str) -> str:
-        """Picker display: prefix the per-type emoji when grouping by type.
-
-        Only the dropdown options carry the glyph; the active-filter chips and
-        the returned :class:`FilterState` keep the icon-free label.
-        """
-        base = labels.get(t, t)
-        if not type_by_table:
-            return base
-        icon = _TYPE_ICON.get(type_by_table.get(t, "Other"), _TYPE_ICON_FALLBACK)
-        return f"{icon} {base}"
+        """Picker display label (type-prefixed when grouping, no icon)."""
+        return labels.get(t, t)
 
     k_sensors = f"{prefix}_sensors"
     k_range = f"{prefix}_range"

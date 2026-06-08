@@ -108,6 +108,7 @@ src/
     charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap)
     kpi.py          ──   metric_tile + aqi_tile
     filter_bar.py   ──   global sensor + time-range toolbar (returns a FilterState; group_by_type for the unified picker)
+    skeleton.py     ──   content-shaped loading placeholders (hero/tiles/tiles_stack/block/lines); styled by the .aq-skel* CSS in app.py
   data/
     loaders.py      ──   @st.cache_data loaders; pages never do I/O directly (incl. load_routes + pure segment_routes for mobile trips)
   db/
@@ -220,8 +221,21 @@ theme-safe in light **and** dark:
      too (Streamlit clamps these blocks to `max-width:100%`). A
      `MutationObserver` re-binds across reruns and a `ResizeObserver` on
      `stMain` re-syncs when the sidebar opens/closes or the window resizes.
+3. **Skeleton loaders** (`.aq-skel*` in `app.py`, markup from
+   `src/components/skeleton.py`): content-shaped grey placeholders shown
+   while a data load is in flight. Streamlit ships no `st.skeleton` widget
+   and the config exposes no token, so the markup is emitted as class'd
+   divs and styled here — a shimmer keyframe over a flat `light-dark()`
+   fill, with a `prefers-reduced-motion` guard. Pages reserve an
+   `st.empty()` slot, fill it with a skeleton, run the (cached) loader, then
+   swap the real content into the same slot; on a cache hit the swap is
+   instant, so a skeleton only shows during a genuine fetch. The shapes
+   mirror the real widgets (tile-shaped for a tile, chart-shaped for a
+   chart) so the layout never jumps. Currently wired across the **Dashboard**
+   (hero, KPI strip, bento, Correlation tab) and its **Compare** tab.
 
-All degrade gracefully (no JS → contained sticky bar, never broken).
+All degrade gracefully (no JS → contained sticky bar, never broken;
+no skeleton CSS → a plain empty slot, never broken).
 **Don't grow this into general CSS/JS styling** — anything theme-able
 still belongs in the config; these hooks are only for chrome the
 framework doesn't expose.

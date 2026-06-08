@@ -178,6 +178,50 @@ st.html(
     [data-testid="stHeader"] {
         background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
     }
+
+    /* Skeleton loaders — content-shaped placeholders shown while data loads.
+       Streamlit ships no st.skeleton widget and the config exposes no token
+       for this, so the markup is emitted as class'd divs by
+       src/components/skeleton.py and styled here (one documented st.html
+       exception, like the others above). Theme-safe via light-dark(); the
+       shimmer is a moving highlight gradient over a flat grey fill, and a
+       reduced-motion guard drops the animation for users who ask for it. */
+    @keyframes aq-skel-shimmer {
+        0%   { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+    .aq-skel {
+        border-radius: 6px;
+        background-color: light-dark(rgb(224, 228, 234), rgb(40, 47, 56));
+        background-image: linear-gradient(
+            90deg,
+            transparent 0%,
+            light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.07)) 50%,
+            transparent 100%);
+        background-size: 200% 100%;
+        background-repeat: no-repeat;
+        animation: aq-skel-shimmer 1.4s ease-in-out infinite;
+    }
+    /* a flex row of skeleton blocks (KPI strip, hero) — mirrors the real layout */
+    .aq-skel-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    /* a tile-shaped skeleton: same fill, radius and shadow as the real cards
+       (st.metric / box_*), so the strip doesn't reflow when values arrive */
+    .aq-skel-card {
+        flex: 1 1 7rem;
+        min-width: 6.5rem;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04),
+                    0 1px 3px rgba(16, 24, 40, 0.06);
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .aq-skel { animation: none; }
+    }
     </style>
     """
 )

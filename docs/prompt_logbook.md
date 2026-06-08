@@ -513,3 +513,75 @@ Newest entries are appended at the bottom.
 - **Verified** on the live dropdown: 📍/🚗/🔬/🌐 all render in front of their
   type (closed box too). POI has no readings so it's excluded from the picker
   pool (`has_data`) — its icon is defined for completeness only.
+
+## 15. Data-loading skeletons across the Dashboard
+
+**Prompt:**
+
+> Add data loading skeletons to the entire page. So wherever data is loaded
+> in it shows an abstract loading representation of the content as long as
+> its loading
+
+**Summary of changes:**
+
+- **New `src/components/skeleton.py`**: a small set of content-shaped
+  placeholder builders — `hero()`, `tiles(n)` (a horizontal strip of
+  tile-shaped cards), `tiles_stack(n)`, `block(height)` (chart/map), and
+  `lines(widths)` — each emitting class'd `.aq-skel*` markup. Rationale doc'd
+  in the module: a content-shaped grey placeholder is perceived as faster than
+  a spinner and tells the user *what/where* is loading (NN/g skeleton screens;
+  Shneiderman #3 feedback), and the shapes mirror the real widgets so the
+  layout doesn't jump when data arrives (no layout shift).
+- **`app.py`**: added the skeleton CSS to the existing global `st.html(<style>)`
+  block — a shimmer keyframe over a flat grey fill, `.aq-skel-row` (flex row
+  for the strip/hero) and `.aq-skel-card` (matches the real card fill/radius/
+  shadow). Theme-safe via `light-dark()`, with a `prefers-reduced-motion`
+  guard that drops the animation. Documented as one more `st.html` exception
+  (Streamlit ships no `st.skeleton` and the config exposes no token).
+- **`app_pages/dashboard.py`**: every on-page data load now paints a skeleton
+  in its slot first, then swaps the real content into the **same** `st.empty()`
+  slot once the (cached) query returns. Covered: the hero card + KPI strip
+  (share one `load_range_summary` query → both skeletoned before it runs), the
+  bento PM-trend chart / location map (stationary) and route map / trip-stats
+  (mobile) — both cells skeletoned before either query runs so the row reads
+  as loading at once — and the Correlation tab's verdict + chart. Static chrome
+  (box + title + hand-off button) renders immediately; only the data area waits.
+- **`app_pages/comparison.py`** (the Dashboard's Compare tab): the
+  averages/distribution charts + numbers table skeleton (`block(360)`) while
+  `load_comparison` runs, then swap in.
+- On a `@st.cache_data` hit the swap is instant, so a skeleton only actually
+  shows when something is genuinely being fetched (first visit / TTL miss).
+- The toolbar's own `load_devices()` keeps its existing cache spinner (the
+  picker layout isn't known until devices load, so it can't be skeletoned);
+  Time Series / Map / Devices pages were left as-is (this pass targets the
+  Dashboard hub) — the `skeleton` component is reusable if we extend later.
+- **Verified**: `uv run pytest` (21 passed, 7 DB-skipped) and a focused
+  `AppTest` exercising the exact mechanics — `st.empty().container()` swap with
+  keyed bordered containers, refilling a placeholder created inside a column
+  from outside its context, the horizontal strip refill, and `st.html`
+  skeleton markup — all render the real content as final state with no errors.
+- **Live-verified** by running the app (`streamlit run app.py` against the
+  local Postgres) and driving it with headless Chrome: the settled Dashboard
+  renders correctly, and clicking the heavier **All** range catches the bento
+  cells showing chart/map-shaped grey skeleton blocks under their (instantly
+  rendered) titles before swapping to the real chart + map — no page errors.
+
+## 16. Remove the emoji icons from the device dropdown
+
+**Prompt:**
+
+> remove the icons from the device dropdown again. No emoji icons
+
+**Summary of changes:**
+
+- **`src/components/filter_bar.py`**: reverted the per-type emoji glyphs added
+  in entry #14. Removed the `_TYPE_ICON` map and `_TYPE_ICON_FALLBACK`, and
+  simplified the picker `format_func` (`_fmt`) to return the plain label. The
+  grouped picker still prefixes the **type word** (`Stationary · …`,
+  `Mobile · …`) so the kinds stay visible but unmixed; only the leading emoji
+  is gone. Chips and the returned `FilterState` were already icon-free and are
+  unchanged.
+- **Live-verified**: reloaded the running app and opened the Sensor dropdown
+  with headless Chrome — options now read `Stationary · SENSORpi s01 · Minden`,
+  `Mobile · …`, `Specialty · …`, `External · …` with no 📍/🚗/🔬/🌐 glyph, and
+  no page errors.
