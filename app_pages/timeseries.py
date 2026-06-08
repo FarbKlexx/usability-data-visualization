@@ -33,7 +33,6 @@ from src.components import charts, filter_bar
 from src.data import (
     available_metrics,
     dashboard_tables_ready,
-    feature_enabled,
     load_annotations,
     load_devices,
     load_particle_sizes,
@@ -55,8 +54,9 @@ from src.utils.metrics import METRICS, get
 from src.utils.state import csv_split, publish_query_params, seed_session_defaults
 from src.utils.text import escape_md
 
+_ZOOM_HELP = "Drag to zoom · double-click to reset · click a legend entry to toggle a series."
+
 st.title(":material/timeline: Time Series")
-st.caption("Pick a sensor and measures, then zoom and brush directly on the charts.")
 
 devices = load_devices()
 pool = devices[devices["has_data"]]
@@ -166,6 +166,9 @@ saved_by_metric = (
 thresholds: dict[str, float] = {}
 with st.expander(":material/horizontal_rule: Reference thresholds", expanded=bool(saved_by_metric)):
     st.caption("Draw a reference line for a measure; readings at/above it are emphasised.")
+    st.page_link(
+        "app_pages/settings.py", label="Manage saved defaults in Settings", icon=":material/tune:"
+    )
     for key in measures:
         m = get(key)
         default_val = float(saved_by_metric.get(key, round(m.vmax * 0.2, 1)))
@@ -181,7 +184,7 @@ with st.expander(":material/horizontal_rule: Reference thresholds", expanded=boo
             thresholds[key] = val
 
 # --- B4: annotations (optional module) -------------------------------------
-annotations_on = dash_ready and feature_enabled("func_dashboard_annotations", default=True)
+annotations_on = dash_ready
 ann_overlay: list[dict] = []
 if annotations_on:
     ann_df = load_annotations(table)
@@ -207,7 +210,7 @@ for key in (k for k in METRICS if k in measures):
 
 for unit, keys in groups.items():
     names = ", ".join(get(k).label for k in keys)
-    st.markdown(f"**{names}** · {unit}")
+    st.markdown(f"**{names}** · {unit}", help=_ZOOM_HELP)
     st.plotly_chart(
         charts.line_chart(
             df, keys, height=300 if len(groups) > 1 else 420,
@@ -216,8 +219,6 @@ for unit, keys in groups.items():
         ),
         theme="streamlit", width="stretch", config={"displaylogo": False},
     )
-
-st.caption("Drag to zoom · double-click to reset · click a legend entry to toggle a series.")
 
 # --- A6: export + A7/B6: save this view ------------------------------------
 csv = df.to_csv(index=False).encode("utf-8")
@@ -299,7 +300,7 @@ if annotations_on:
                     st.rerun()
 
 # --- B5: raw-reading inspector + flags (optional module) -------------------
-if dash_ready and feature_enabled("func_dashboard_raw_inspector", default=True):
+if dash_ready:
     with st.expander(":material/flag: Raw readings & flags", expanded=False):
         st.caption(
             "Flag individual readings (e.g. a 999.9 sentinel) as suspect without "
@@ -339,7 +340,7 @@ if dash_ready and feature_enabled("func_dashboard_raw_inspector", default=True):
                     st.rerun()
 
 # --- Hi-res sensor drill-down: particle-size distribution (optional, §B3) ---
-if shape_of(table) == "B" and feature_enabled("func_dashboard_particle_drilldown", default=True):
+if shape_of(table) == "B":
     st.divider()
     st.subheader(":material/scatter_plot: Particle size distribution")
     part_df = load_particle_sizes(table, fs.start, fs.end)

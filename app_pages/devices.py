@@ -102,24 +102,31 @@ if sentinel_rows:
     st.markdown("**Saturation sentinels excluded from every chart** (counted, never silently dropped):")
     st.dataframe(sentinel_rows, hide_index=True, width="stretch")
 
-st.markdown(
-    """
-Handled centrally in the data layer so every view tells the same story:
+st.caption("Handled centrally in the data layer so every view tells the same story — details on demand:")
 
-- **Saturation ceilings** — PM2.5 caps at 999.9 µg/m³, PM10 at 1999.9, temp1 at 85 °C.
-  These are nulled before any average and disclosed wherever they occur.
-- **Swapped coordinates** — the hi-res Gdańsk sensor stores lat/lon reversed;
-  corrected on load so it maps to the right place.
-- **Duplicate rows** — one mobile track has identical repeated rows (a migration
-  artefact); de-duplicated before drawing the track.
-- **Empty devices** — mobile units *m13–m20* are registered but never logged data,
-  so they carry no table and appear here with zero rows.
-- **Units** — particulate matter is shown as **µg/m³**, correcting the registry's
-  mislabelled "ppm".
-- **No native `ts` index** — a reversible migration adds one per populated table so
-  time-range queries stay responsive.
-"""
+_ISSUES = (
+    ("Saturation ceilings",
+     "PM2.5 caps at 999.9 µg/m³, PM10 at 1999.9, temp1 at 85 °C. These are nulled "
+     "before any average and disclosed wherever they occur."),
+    ("Swapped coordinates",
+     "The hi-res Gdańsk sensor stores lat/lon reversed; corrected on load so it "
+     "maps to the right place."),
+    ("Duplicate rows",
+     "One mobile track has identical repeated rows (a migration artefact); "
+     "de-duplicated before drawing the track."),
+    ("Empty devices",
+     "Mobile units *m13–m20* are registered but never logged data, so they carry "
+     "no table and appear here with zero rows."),
+    ("Units",
+     "Particulate matter is shown as **µg/m³**, correcting the registry's "
+     "mislabelled \"ppm\"."),
+    ("No native `ts` index",
+     "A reversible migration adds one per populated table so time-range queries "
+     "stay responsive."),
 )
+for _title, _detail in _ISSUES:
+    with st.expander(_title):
+        st.markdown(_detail)
 
 st.divider()
 

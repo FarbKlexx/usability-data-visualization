@@ -17,47 +17,52 @@ st.set_page_config(
     page_title="Air Quality Dashboard",
     page_icon=":material/air:",
     layout="wide",
-    initial_sidebar_state="expanded",
+    # Nav lives in the left sidebar; start it collapsed so it reads as a
+    # burger menu (the » control at top-left slides it out).
+    initial_sidebar_state="collapsed",
     menu_items={
         "About": "Air Quality Usability Dashboard — built for the Usability course.",
     },
 )
 
-PAGES = [
-    st.Page(
-        "app_pages/dashboard.py",
-        title="Dashboard",
-        icon=":material/dashboard:",
-        default=True,
-    ),
-    st.Page(
-        "app_pages/timeseries.py",
-        title="Time Series",
-        icon=":material/timeline:",
-    ),
-    st.Page(
-        "app_pages/map.py",
-        title="Map",
-        icon=":material/map:",
-    ),
-    st.Page(
-        "app_pages/comparison.py",
-        title="Comparison",
-        icon=":material/compare_arrows:",
-    ),
-    st.Page(
-        "app_pages/devices.py",
-        title="Devices & Data Quality",
-        icon=":material/sensors:",
-    ),
-    st.Page(
-        "app_pages/manage.py",
-        title="Manage",
-        icon=":material/tune:",
-    ),
-]
+# Grouped into two labelled sections so the menu reads as two sense-clusters
+# rather than six equal-rank words (Hick's law + Miller at the menu level;
+# 5Es weighting puts the admin surface last). Comparison is folded into the
+# Dashboard's Compare tab; Manage became Settings.
+PAGES = {
+    "Monitor & Analyse": [
+        st.Page(
+            "app_pages/dashboard.py",
+            title="Dashboard",
+            icon=":material/dashboard:",
+            default=True,
+        ),
+        st.Page(
+            "app_pages/timeseries.py",
+            title="Time Series",
+            icon=":material/timeline:",
+        ),
+        st.Page(
+            "app_pages/map.py",
+            title="Map",
+            icon=":material/map:",
+        ),
+    ],
+    "Reference & Settings": [
+        st.Page(
+            "app_pages/devices.py",
+            title="Devices & Data Quality",
+            icon=":material/sensors:",
+        ),
+        st.Page(
+            "app_pages/settings.py",
+            title="Settings",
+            icon=":material/tune:",
+        ),
+    ],
+}
 
-page = st.navigation(PAGES, position="top")
+page = st.navigation(PAGES, position="sidebar")
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -81,5 +86,28 @@ if db_error:
     with st.expander("Technical detail"):
         st.code(db_error)
     st.stop()
+
+# The sidebar nav opens from a left burger menu. Streamlit's expand control
+# defaults to a » chevron and exposes no config hook for that glyph, so this
+# is the one unavoidable CSS escape hatch: swap *only the glyph* to the
+# Material Symbols "menu" hamburger (☰, codepoint \e5d2). Colour/size stay
+# theme-driven (the original span keeps its layout; we overlay the glyph via
+# ::after, inheriting the icon font + current colour), so dark mode is intact.
+st.html(
+    """
+    <style>
+    [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {
+        visibility: hidden;
+        position: relative;
+    }
+    [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"]::after {
+        content: "\\e5d2";  /* Material Symbols: menu */
+        visibility: visible;
+        position: absolute;
+        inset: 0;
+    }
+    </style>
+    """
+)
 
 page.run()

@@ -28,6 +28,22 @@ PR:
 - **Honest data** — no truncated Y-axes without a notice; no chart junk; saturation sentinels are hidden *and disclosed* (counted, never silently dropped); derived quantities (CAQI) are labelled as computed.
 - **44×44 px** minimum touch targets.
 
+## Prompt logbook
+
+Every user prompt in this project is recorded in
+[`docs/prompt_logbook.md`](docs/prompt_logbook.md). **For each new
+prompt the user gives, append a new entry** at the bottom of that file,
+incrementing the heading number, with three parts:
+
+- **Title** — a short `##`-level label summarizing the request.
+- **Prompt** — the user's concrete prompt, verbatim, as a blockquote.
+- **Summary of changes** — a bulleted list of what was actually done in
+  response (files created/edited, behavior changed).
+
+Do this as part of fulfilling the request, not as a separate step the
+user has to ask for. If a prompt produces no code change (a question,
+a clarification), still log it and note that in the summary.
+
 ## Commands
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency
@@ -86,7 +102,7 @@ compatible interpreter on first `uv sync` if none is available.
 
 ```
 app.py              ── thin router: page_config + st.navigation + a cached DB-health guard
-app_pages/*.py      ── one module per page; UI only (dashboard [hub], timeseries, map, comparison, devices, manage)
+app_pages/*.py      ── one module per page; UI only (dashboard [hub], timeseries, map, devices, settings). comparison.py is no longer a top-level page — it exposes render_compare(), mounted in the Dashboard's Compare tab.
 src/
   components/       ── reusable UI primitives
     charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap)
@@ -138,22 +154,30 @@ Registered explicitly in `app.py`; each is read-only unless noted.
 
 | Page | Purpose | Write-back |
 |------|---------|-----------|
-| **Dashboard** *(adaptive hub)* | One **type-grouped device picker** drives an adaptive view: plain-language CAQI status, then **one headline visual per device type** — PM trend + location marker for stationary/fixed (incl. the axis-swapped 781c), or a **segmented route map** (1 h-gap trips, points PM-coloured via Viridis) for mobile. Secondary functions in **tabs**: *Measures & data* (KPIs, measures, raw/clean, CSV), *Correlation* (verdict-first \|r\|), *Routes* (mobile: split-gap control, per-route PM chart) | — |
-| **Time Series** | Deep single-sensor exploration: aggregation bucket, rolling avg, raw/clean toggle, thresholds, CSV, bookmarkable URL state | annotations, reading flags, saved views *(feature-gated)* |
-| **Map** | Locations + mobile tracks, layer toggles, details-on-demand KPIs, "Explore in Time Series" hand-off | edit location (address + coords) |
-| **Comparison** | One measure across many sensors: grouped-bar averages + box-plot distributions + stats grid + CSV | — |
-| **Devices & Data Quality** | Device catalog, coverage timeline, honest data-quality audit | edit device metadata |
-| **Manage** | Admin surface: feature-flag toggles, persisted thresholds, saved-view apply/delete | feature flags, thresholds, views |
+| **Dashboard** *(adaptive cockpit)* | Fixed top-to-bottom hierarchy: **hero card** (the only `st.subheader`, *names the active device* + plain-language CAQI verdict + dominant-PM number) → **KPI strip** (the canonical 6-tile snapshot, lifted above the fold) → **`[2,1]` bento** (PM trend / route map *beside* a near-square location map / trip-stats card) → one divider → **tabs**: *Compare* (folded-in multi-sensor comparison), *Correlation* (verdict-first \|r\|), and *Routes* (mobile: split-gap + per-route PM). Operating hints are tooltips; only honesty disclosures stay as captions. | — |
+| **Time Series** | Deep single-sensor exploration: aggregation bucket, rolling avg, raw/clean toggle, thresholds, CSV, bookmarkable URL state. The annotation / raw-inspector / particle-drilldown modules now render **always** (no longer feature-gated). | annotations, reading flags, saved views |
+| **Map** | Locations + mobile tracks, layer toggles; details-on-demand = a single CAQI tile + "Open in Time Series" hand-off (the full KPI snapshot lives on the Dashboard, not duplicated here) | edit location (address + coords) |
+| **Devices & Data Quality** | Device catalog, coverage timeline, honest data-quality audit (known-issue detail in expanders) | edit device metadata |
+| **Settings** | Slim admin surface: persisted thresholds (used as Time Series reference lines) + a saved-views expander (apply/delete). *Feature-flag toggles removed — the optional modules are always on.* | thresholds, views |
+
+Comparison is no longer a page: `app_pages/comparison.py` exposes
+`render_compare()`, mounted in the Dashboard's **Compare** tab.
 
 ### Navigation
 
-`app.py` registers pages explicitly via `st.navigation([...])` with
-`position="top"`. The pages directory is named **`app_pages/`, not
-`pages/`**, on purpose — `pages/` would trigger Streamlit's legacy
-auto-discovery and double-register every page.
+`app.py` registers pages explicitly via `st.navigation({...})` with
+`position="sidebar"`; `set_page_config(initial_sidebar_state="collapsed")`
+makes it a **left burger menu** (collapsed by default, opened via the `»`
+control). `PAGES` is a **dict of two labelled sections** — *Monitor &
+Analyse* (Dashboard, Time Series, Map) and *Reference & Settings* (Devices
+& Data Quality, Settings) — so the menu reads as two sense-clusters rather
+than a flat list (Hick/Miller at the menu level).
+The pages directory is named **`app_pages/`, not `pages/`**, on purpose —
+`pages/` would trigger Streamlit's legacy auto-discovery and
+double-register every page.
 
-To add a page: create `app_pages/<name>.py`, then append an
-`st.Page(...)` entry to the `PAGES` list in `app.py`.
+To add a page: create `app_pages/<name>.py`, then add an `st.Page(...)`
+entry to the relevant section list in the `PAGES` dict in `app.py`.
 
 `app.py` also runs a cached `check_connection()` health check before
 `page.run()`; if the DB is unreachable it shows a friendly "can't
@@ -166,6 +190,14 @@ All visual styling goes through `.streamlit/config.toml`. **Do not
 use `st.markdown(..., unsafe_allow_html=True)` or `st.html()` with
 `<style>` blocks** — it bypasses the design system and breaks dark
 mode. If a color or radius needs to change, change it in the config.
+
+**The one documented exception:** `app.py` injects a single tiny
+`st.html(<style>)` that swaps the sidebar burger-menu glyph (Streamlit's
+`»` expand control → the Material Symbols `menu` ☰), because Streamlit
+exposes no config hook for that built-in icon. It changes *only the
+glyph* (colour/size stay theme-driven via `::after` inheriting the icon
+font + current colour), so dark mode is verified intact. Don't grow this
+into general CSS styling — anything theme-able still belongs in the config.
 
 The categorical palette in the config mirrors `OKABE_ITO` in
 `src/utils/palette.py`; keep them in sync when editing.
@@ -233,11 +265,14 @@ strands **A** (UI interactivity) and **B** (database write-back).
     `save_view`/`delete_view`. Functions that name a sensor table
     validate it through `is_sensor_table` first.
 - **Feature flags** are rows in `tbl_systemconfiguration` with
-  `ckey LIKE 'func\_%'`, toggled from the **Manage** page via
-  `set_feature_flag`. Pages gate optional modules with
-  `feature_enabled(ckey)` (and `dashboard_tables_ready()`):
-  `func_dashboard_annotations`, `func_dashboard_raw_inspector`,
-  `func_dashboard_particle_drilldown`.
+  `ckey LIKE 'func\_%'`. The toggle UI was **removed** in the IA
+  consolidation: the three optional Time Series modules
+  (`func_dashboard_annotations`, `func_dashboard_raw_inspector`,
+  `func_dashboard_particle_drilldown`) now render **unconditionally**
+  (gated only by `dashboard_tables_ready()` / sensor shape), so a lay
+  user faces no on/off decision. The `set_feature_flag` /
+  `feature_enabled` / `load_feature_flags` helpers still exist in
+  `src/` for programmatic use, but no page calls them.
 
 ## Data source
 
@@ -316,8 +351,9 @@ To test a hosted DB locally, copy `.streamlit/secrets.toml.example` to
 `.streamlit/secrets.toml` (gitignored) with the same `DATABASE_URL`.
 Community Cloud auto-redeploys on push to the deployed branch; only
 **secret changes** require a manual reboot. Write-back features are
-live on a public deploy — disable optional modules from **Manage** for
-a read-only demo. **Never commit a real connection string**; rotate
+live on a public deploy (the in-context edit forms on Map/Devices and
+the **Settings** thresholds/views). **Never commit a real connection
+string**; rotate
 the DB password if one leaks.
 
 ## Conventions

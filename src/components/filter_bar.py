@@ -140,6 +140,7 @@ def filter_bar(
             st.button(
                 "Reset", icon=":material/restart_alt:", on_click=_reset,
                 width="stretch", help="Restore the default sensor and range.",
+                key=f"{prefix}_reset",  # namespaced so two bars can share a page (e.g. hub + Compare tab)
             )
 
     # Resolve selection -> tables + time window.

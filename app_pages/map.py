@@ -17,11 +17,10 @@ import streamlit as st
 import pandas as pd
 
 from src.components import charts
-from src.components.kpi import aqi_tile, metric_tile
+from src.components.kpi import aqi_tile
 from src.data import load_devices, load_latest, load_locations, load_tracks
 from src.db import update_location
 from src.utils.aqi import caqi_band
-from src.utils.metrics import HEADLINE_KPIS
 from src.utils.state import hand_off_to_timeseries
 
 st.title(":material/map: Map")
@@ -91,23 +90,21 @@ vals = {r.metric: (r.value, r.delta) for r in latest_df.itertuples()}
 if latest_ts is not None:
     st.caption(f":material/schedule: Latest reading {latest_ts:%Y-%m-%d %H:%M}")
 
-keys = [k for k in HEADLINE_KPIS if k in vals]
-cols = st.columns(len(keys) + 1, gap="small")
-for col, key in zip(cols, keys):
-    with col:
-        value, delta = vals[key]
-        metric_tile(key, value, delta)
-with cols[-1]:
+# Map answers "where", not "what's the number" — the canonical KPI snapshot
+# lives on the Dashboard (one home, IA P4). Here we show only the headline
+# air-quality verdict, then hand off for the full readout.
+dc1, dc2 = st.columns([0.4, 0.6], vertical_alignment="center")
+with dc1:
     aqi_tile(caqi_band(vals.get("pm2_5", (None,))[0], vals.get("pm10_0", (None,))[0]))
-
-# Cross-filter hand-off: jump to the Time Series page for this sensor (plan §A1).
-st.button(
-    "Explore in Time Series",
-    icon=":material/timeline:",
-    help="Open the Time Series page focused on this sensor.",
-    on_click=hand_off_to_timeseries,
-    args=(chosen,),
-)
+with dc2:
+    # Cross-filter hand-off: jump to the Time Series page for this sensor (plan §A1).
+    st.button(
+        "Open in Time Series",
+        icon=":material/open_in_full:",
+        help="Full readout: KPIs, all measures, aggregation, thresholds, annotations.",
+        on_click=hand_off_to_timeseries,
+        args=(chosen,),
+    )
 
 st.divider()
 
