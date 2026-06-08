@@ -777,3 +777,98 @@ round-trip, and a viewport resize after a round-trip still re-syncs the width
   `x=68` == the bar's `x=68`); scroll-up hides it; navigating to **Map while
   scrolled** hides it (no orphan); returning + scrolling shows it again. No
   page errors.
+
+## 23. Rounded chart/map corners; smoothed line + fade-to-transparent gradient
+
+**Prompt:**
+
+> make sure that for the graphs and maps the corners are rounded accordingly.
+> also for the graph: smooth the graph out a bit to make it look nicer and add a
+> gradient below the graph that fades to transparent in the same color as the
+> graph
+
+**Summary of changes:**
+
+- **`src/components/charts.py`**:
+  - Added `_hex_to_rgba` + `_area_gradient` helpers and two tuning constants:
+    `_SPLINE = 0.5` (gentle spline tension — kept low so the smoothing doesn't
+    invent peaks, per the honesty rule) and `_FILL_ALPHA = 0.26` (peak opacity
+    of the area gradient).
+  - `line_chart`: the main series is now `line.shape="spline"` + `smoothing`,
+    and for **zero-based** measures gets `fill="tozeroy"` + a vertical
+    `fillgradient` (Plotly 6.7) fading from the line's colour at the top to
+    transparent at the axis. Skipped for temp/pressure (filling to 0 is
+    meaningless there). The rolling-average overlay and threshold markers are
+    left unfilled.
+  - `small_multiples` (spline + gradient on zero-based panels) and
+    `normalized_overlay` (spline only — multiple lines, no fill) get the same
+    smoothing for visual consistency.
+- **`app.py`**: CSS rounds the corners of charts **and** maps —
+  `stPlotlyChart { border-radius: 8px; overflow: hidden }` (+ inner
+  `js-plotly-plot` / `maplibregl-map`), matching the cards' 8px radius. The big
+  win is the opaque OSM map tiles, which previously showed square corners
+  inside the rounded card.
+- **`CLAUDE.md`**: noted the line aesthetics + corner-rounding on the charts.py
+  architecture line.
+- **Live-verified** (headless Chrome, 2× DPI): the PM trend shows smooth
+  PM2.5/PM10 curves with orange/blue gradients fading to transparent; the
+  location map has rounded corners; the legend and the hover modebar (top-right,
+  next to a rounded corner) are **not** clipped by `overflow:hidden`. No page
+  errors.
+
+## 24. Bridge missing points with a line
+
+**Prompt:**
+
+> when data is missing between points still connect them via a line
+
+**Summary of changes:**
+
+- **`src/components/charts.py`**: flipped every time-series line trace from
+  `connectgaps=False` to `connectgaps=True` — the raw `line_chart` series, its
+  rolling-average overlay, `small_multiples`, and `normalized_overlay`. Missing
+  points (outages / cleaned saturation sentinels) are now bridged by the line
+  instead of leaving a break. The honesty disclosure is unchanged: hidden
+  readings are still counted and surfaced in the chart's `hidden_notice`
+  caption, so nothing is silently dropped — only the visual line is continuous.
+- **Verified**: build check shows `connectgaps=True` on a frame with an
+  injected NaN gap; the dashboard renders with no page errors; `uv run pytest`
+  → 28 passed.
+
+## 25. KPI trend at 24 h: fall back to the last window with data
+
+**Prompt:**
+
+> when i select the 24 hour range, why isnt there a trend comparison to the
+> last 24 hours?
+
+**Diagnosis** (queried the live DB): not a bug — the default device
+(SENSORpi s01) has a ~4-day gap in its record (Nov 6 03:03 → Nov 10 12:34). At
+24 h the current window (Nov 10→11) has 1,109 readings but the immediately-
+preceding 24 h window (Nov 9→10) has **0** — it lands entirely in the gap — so
+`load_range_summary` returned `delta=None` and the tiles correctly showed no
+arrow (no misleading trend against an empty period). 7 d/30 d reach past the gap,
+so they did show a trend.
+
+**Decision:** asked the user; they chose **fall back to the last equal-length
+window that has data** (over a "no-comparison" hint or leaving it blank).
+
+**Summary of changes:**
+
+- **`src/data/loaders.py`** — `load_range_summary` now: when the immediately-
+  preceding window holds no readings (a `count(*) FILTER (...) == 0` check),
+  it finds the last reading before `start` (`max(ts) WHERE ts < :start`, index-
+  backed) and measures the delta against the equal-length window ending there
+  instead. Two extra cheap queries, only on the gap path. New return value
+  `baseline_end` (the fallback window's end, else `None`) signals the shift to
+  the UI. The contiguous case and "All" (no prior reading) are unchanged.
+- **`app_pages/dashboard.py`** — unpacks the new `baseline_end`; the trend label
+  is now built after the query and reads **"previous 24 h with data (to Nov 06)"**
+  when the baseline was shifted, plain **"previous 24 h"** otherwise. Moved the
+  strip caption into a placeholder (`cap_ph`) since the label is only known
+  post-query.
+- **Live-verified**: at 24 h the hero/KPI tiles now show trend arrows (PM2.5
+  ↑ +9.2 µg/m³) and the strip caption reads "24 h average · trend vs. previous
+  24 h with data (to Nov 06)"; 7 d still uses the immediate prior window
+  (delta +1.22, no "with data" suffix); "All" still shows no trend. `uv run
+  pytest` → 28 passed; no page errors.

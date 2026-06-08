@@ -88,7 +88,6 @@ device_name = device_label(drow)  # clean "name · city", no type prefix
 # skeleton in both slots *before* it runs and swap the values in afterwards —
 # the layout never jumps and the wait reads as "loading", not "broken".
 avg_label = "full-record average" if fs.range_key == "All" else f"{fs.range_key} average"
-prev_label = None if fs.range_key == "All" else f"previous {fs.range_key}"
 
 # === ZONE 1: hero card — names the device + states the verdict (focal point) =
 hero_ph = st.empty()
@@ -96,17 +95,31 @@ with hero_ph.container(border=True, key="box_hero_skel"):
     skeleton.hero()
 
 # === ZONE 2: KPI strip — lifted above the fold (was hidden in a tab) =========
-strip_cap = f":material/schedule: {avg_label[:1].upper()}{avg_label[1:]}"
-if prev_label:
-    strip_cap += f" · trend vs. {prev_label}"
-st.caption(strip_cap)
+# The trend-baseline label can only be written *after* the query: if the
+# immediately-preceding window was a gap, the delta falls back to the most
+# recent window that had data, and the caption must say so — hence its own
+# placeholder rather than a caption rendered up front.
+cap_ph = st.empty()
 strip_ph = st.empty()
 with strip_ph.container():
     skeleton.tiles(len(HEADLINE_KPIS) + 1)  # headline measures + the CAQI tile
 
-summary_df, latest_ts = load_range_summary(table, fs.start, fs.end)
+summary_df, latest_ts, baseline_end = load_range_summary(table, fs.start, fs.end)
 vals = {r.metric: (r.value, r.delta) for r in summary_df.itertuples()}
 band = caqi_band(vals.get("pm2_5", (None,))[0], vals.get("pm10_0", (None,))[0])
+
+# Name the trend baseline honestly: normally "previous 7 d"; when the immediate
+# prior window held no data, "previous 7 d with data (to <date>)".
+if fs.range_key == "All":
+    prev_label = None
+elif baseline_end is not None:
+    prev_label = f"previous {fs.range_key} with data (to {baseline_end:%b %d})"
+else:
+    prev_label = f"previous {fs.range_key}"
+strip_cap = f":material/schedule: {avg_label[:1].upper()}{avg_label[1:]}"
+if prev_label:
+    strip_cap += f" · trend vs. {prev_label}"
+cap_ph.caption(strip_cap)
 
 with hero_ph.container(border=True, key="box_hero"):
     hL, hR = st.columns([0.62, 0.38], gap="medium", vertical_alignment="center")

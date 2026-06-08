@@ -294,26 +294,34 @@ def load_latest(
 @st.cache_data(ttl=600, show_spinner=False)
 def load_range_summary(
     table: str, start: datetime, end: datetime
-) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+) -> tuple[pd.DataFrame, pd.Timestamp | None, pd.Timestamp | None]:
     """Per-metric **mean over [start, end)** + a period-over-period delta.
 
     The dashboard KPI strip uses this so the tiles reflect the selected
     time range (a 7-day pick shows the 7-day average), not a fixed
     snapshot. ``value`` is the sentinel-cleaned mean over the window;
     ``delta`` compares it to the mean over the **previous** equal-length
-    window ``[start - (end - start), start)`` — ``None`` when that prior
-    window holds no readings (e.g. the "All" range, which reaches back to
-    the first reading). Also returns the latest timestamp *within* the
-    window so the UI can show data currency.
+    window ``[start - (end - start), start)``.
 
-    Returns ``(long_df[metric, value, delta], latest_ts)``.
+    **Fallback baseline.** When that immediately-preceding window holds *no*
+    readings — a gap in the record (e.g. picking "24 h" when the device went
+    quiet for the prior days) — the delta would otherwise vanish. Instead we
+    fall back to the most recent equal-length window that *does* have data:
+    the one ending at the last reading before ``start``. ``baseline_end`` is
+    returned ``None`` for the normal contiguous case (and when there is simply
+    no prior reading at all, e.g. the "All" range), or the end of the fallback
+    window when the comparison was shifted — so the UI can label the shifted
+    baseline honestly ("previous 24 h *with data*").
+
+    Returns ``(long_df[metric, value, delta], latest_ts, baseline_end)``.
     """
     safe = safe_sensor_table(table)
     pairs = available_metrics(table)
     if not pairs:
-        return pd.DataFrame(columns=["metric", "value", "delta"]), None
+        return pd.DataFrame(columns=["metric", "value", "delta"]), None, None
 
-    prev_start = start - (end - start)
+    window = end - start
+    prev_start = start - window
     cur_cols = ", ".join(
         f"avg({_clean_expr(col, m)}) FILTER (WHERE ts >= :start AND ts < :end) AS {m.key}"
         for m, col in pairs
@@ -324,24 +332,51 @@ def load_range_summary(
     )
     sql = f"""
         SELECT max(ts) FILTER (WHERE ts >= :start AND ts < :end) AS _last,
+               count(*) FILTER (WHERE ts >= :pstart AND ts < :start) AS _prev_n,
                {cur_cols}, {prev_cols}
         FROM {safe}
         WHERE ts >= :pstart AND ts < :end
     """
     df = read_sql(sql, {"start": start, "end": end, "pstart": prev_start})
     if df.empty:
-        return pd.DataFrame(columns=["metric", "value", "delta"]), None
+        return pd.DataFrame(columns=["metric", "value", "delta"]), None, None
 
     row = df.iloc[0]
     latest_ts = pd.to_datetime(row["_last"]) if pd.notna(row["_last"]) else None
+
+    # If the immediately-preceding window held nothing, compare against the
+    # most recent equal-length window that does have data (the one ending at
+    # the last reading before `start`). Two cheap, index-backed extra queries,
+    # only on the gap path.
+    baseline_end: pd.Timestamp | None = None
+    fb: dict[str, float] = {}
+    if int(row["_prev_n"] or 0) == 0:
+        pl = read_sql(f"SELECT max(ts) AS prev_last FROM {safe} WHERE ts < :start", {"start": start})
+        prev_last = (
+            pd.to_datetime(pl.iloc[0]["prev_last"])
+            if not pl.empty and pd.notna(pl.iloc[0]["prev_last"]) else None
+        )
+        if prev_last is not None:
+            baseline_end = prev_last
+            fb_cols = ", ".join(
+                f"avg({_clean_expr(col, m)}) FILTER (WHERE ts >= :bstart AND ts < :bend) AS {m.key}"
+                for m, col in pairs
+            )
+            fbdf = read_sql(
+                f"SELECT {fb_cols} FROM {safe} WHERE ts >= :bstart AND ts < :bend",
+                {"bstart": (prev_last - window).to_pydatetime(), "bend": prev_last.to_pydatetime()},
+            )
+            if not fbdf.empty:
+                fb = {m.key: fbdf.iloc[0].get(m.key) for m, _ in pairs}
+
     records = []
     for m, _ in pairs:
         value = row.get(m.key)
-        prev = row.get(f"{m.key}_prev")
         value = None if pd.isna(value) else float(value)
-        delta = None if (value is None or pd.isna(prev)) else value - float(prev)
+        prev = fb.get(m.key) if baseline_end is not None else row.get(f"{m.key}_prev")
+        delta = None if (value is None or prev is None or pd.isna(prev)) else value - float(prev)
         records.append({"metric": m.key, "value": value, "delta": delta})
-    return pd.DataFrame.from_records(records), latest_ts
+    return pd.DataFrame.from_records(records), latest_ts, baseline_end
 
 
 # --- Time series ------------------------------------------------------------

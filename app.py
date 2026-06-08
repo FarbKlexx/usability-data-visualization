@@ -167,6 +167,22 @@ st.html(
         background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
     }
 
+    /* Round the corners of charts and maps to match the cards (config
+       baseRadius is 8px). Plotly draws square corners; clipping the chart
+       container rounds both the line-chart plot background and — the main
+       win — the opaque OpenStreetMap tiles, which otherwise show square
+       corners inside the rounded card. */
+    [data-testid="stPlotlyChart"],
+    [data-testid="stPlotlyChart"] > div,
+    [data-testid="stPlotlyChart"] .stPlotlyChart,
+    [data-testid="stPlotlyChart"] .js-plotly-plot,
+    [data-testid="stPlotlyChart"] .maplibregl-map {
+        border-radius: 8px;
+    }
+    [data-testid="stPlotlyChart"] {
+        overflow: hidden;
+    }
+
     /* Page name surfaced in the fixed top header once the Dashboard filter bar
        sticks (a scroll-condense title). The watcher (end of app.py) injects it
        as a child of the header, sets its left edge to the main column so it

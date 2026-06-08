@@ -105,7 +105,7 @@ app.py              ── thin router: page_config + st.navigation + a cached D
 app_pages/*.py      ── one module per page; UI only (dashboard [hub], timeseries, map, devices, settings). comparison.py is no longer a top-level page — it exposes render_compare(), mounted in the Dashboard's Compare tab.
 src/
   components/       ── reusable UI primitives
-    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap)
+    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap). Line builders draw a gently spline-smoothed curve (`_SPLINE`, kept low so it doesn't invent peaks) with a fade-to-transparent vertical area gradient in the series colour (`_area_gradient`), but only for zero-based measures (fill-to-0 is meaningless for temp/pressure). Chart/map corners are rounded by CSS in app.py (`stPlotlyChart` border-radius + overflow:hidden).
     kpi.py          ──   metric_tile + aqi_tile
     filter_bar.py   ──   global sensor + time-range toolbar (returns a FilterState; group_by_type for the unified picker)
     skeleton.py     ──   content-shaped loading placeholders (hero/tiles/tiles_stack/block/lines); styled by the .aq-skel* CSS in app.py

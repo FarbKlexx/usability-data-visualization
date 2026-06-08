@@ -30,6 +30,28 @@ from src.utils.palette import OKABE_ITO
 _AXIS_FROM_ZERO = {"pm2_5", "pm10_0", "co2", "inn_hum", "caqi"}  # concentrations/counts
 _TRANSPARENT = "rgba(0,0,0,0)"
 
+# Line aesthetics (purely cosmetic; kept gentle so the curve doesn't lie about
+# the data). `_SPLINE` is plotly's spline tension: 0 == linear, 1.3 == max — a
+# low value rounds the joints without inventing peaks. `_FILL_ALPHA` is the
+# peak opacity of the area gradient that fades to transparent toward the axis.
+_SPLINE = 0.5
+_FILL_ALPHA = 0.26
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    """``"#E69F00"`` -> ``"rgba(230,159,0,0.26)"`` for translucent fills."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _area_gradient(hex_color: str) -> dict:
+    """Vertical fill that is the line's colour at the top, transparent at 0."""
+    return dict(
+        type="vertical",
+        colorscale=[[0.0, _hex_to_rgba(hex_color, 0.0)], [1.0, _hex_to_rgba(hex_color, _FILL_ALPHA)]],
+    )
+
 
 def _hovertemplate(metric: Metric) -> str:
     return f"%{{x|%Y-%m-%d %H:%M}}<br>{metric.label}: %{{y:.{metric.decimals}f}} {metric.unit}<extra></extra>"
@@ -84,21 +106,28 @@ def line_chart(
 
     for key in present:
         metric = get(key)
-        fig.add_trace(
-            go.Scatter(
-                x=df["ts"], y=df[key], name=f"{metric.label}",
-                mode="lines", line=dict(color=metric.color, width=2),
-                hovertemplate=_hovertemplate(metric),
-                connectgaps=False,  # gaps (hidden sentinels / outages) stay visible
-            )
+        trace = dict(
+            x=df["ts"], y=df[key], name=f"{metric.label}",
+            mode="lines",
+            line=dict(color=metric.color, width=2, shape="spline", smoothing=_SPLINE),
+            hovertemplate=_hovertemplate(metric),
+            connectgaps=True,  # bridge missing/sentinel points with a line (the
+            # hidden-reading count is still disclosed via the caption's hidden_notice)
         )
+        # Soft area gradient fading to transparent toward the axis — only for
+        # zero-based measures, where filling down to 0 is meaningful (it would
+        # be nonsense for temperature/pressure whose 0 is off-scale).
+        if key in _AXIS_FROM_ZERO:
+            trace["fill"] = "tozeroy"
+            trace["fillgradient"] = _area_gradient(metric.color)
+        fig.add_trace(go.Scatter(**trace))
         # Rolling-average overlay (plan §A2): dashed, same hue, on top.
         if smooth is not None and key in smooth.columns and smooth[key].notna().any():
             fig.add_trace(
                 go.Scatter(
                     x=smooth["ts"], y=smooth[key], name=f"{metric.label} (avg)",
                     mode="lines", line=dict(color=metric.color, width=2.6, dash="dash"),
-                    hovertemplate=_hovertemplate(metric), connectgaps=False,
+                    hovertemplate=_hovertemplate(metric), connectgaps=True,
                 )
             )
         # Threshold line + emphasised exceedances (plan §A4).
@@ -170,14 +199,15 @@ def small_multiples(df: pd.DataFrame, metric_keys: list[str] | tuple[str, ...], 
     )
     for i, key in enumerate(present, start=1):
         metric = get(key)
-        fig.add_trace(
-            go.Scatter(
-                x=df["ts"], y=df[key], name=metric.label, mode="lines",
-                line=dict(color=metric.color, width=1.8), showlegend=False,
-                hovertemplate=_hovertemplate(metric), connectgaps=False,
-            ),
-            row=i, col=1,
+        sm = dict(
+            x=df["ts"], y=df[key], name=metric.label, mode="lines",
+            line=dict(color=metric.color, width=1.8, shape="spline", smoothing=_SPLINE),
+            showlegend=False, hovertemplate=_hovertemplate(metric), connectgaps=True,
         )
+        if key in _AXIS_FROM_ZERO:
+            sm["fill"] = "tozeroy"
+            sm["fillgradient"] = _area_gradient(metric.color)
+        fig.add_trace(go.Scatter(**sm), row=i, col=1)
         if key in _AXIS_FROM_ZERO:
             fig.update_yaxes(rangemode="tozero", row=i, col=1)
     fig.update_layout(
@@ -507,8 +537,8 @@ def normalized_overlay(
         fig.add_trace(
             go.Scatter(
                 x=df["ts"], y=df[key], name=metric.label, mode="lines",
-                line=dict(color=metric.color, width=2), connectgaps=False,
-                customdata=real, hovertemplate=hover,
+                line=dict(color=metric.color, width=2, shape="spline", smoothing=_SPLINE),
+                connectgaps=True, customdata=real, hovertemplate=hover,
             )
         )
     fig.update_layout(
