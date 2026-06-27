@@ -45,7 +45,7 @@ from src.utils.aqi import COMPUTED_NOTE, caqi_band
 from src.utils.clean import hidden_notice
 from src.utils.correlate import compute_correlation, correlation_verdict, normalize_frame
 from src.utils.metrics import HEADLINE_KPIS, get
-from src.utils.state import csv_split, hand_off_to_timeseries, publish_query_params, seed_session_defaults
+from src.utils.state import csv_split, publish_query_params, seed_session_defaults
 
 # CAQI level → Streamlit badge colour (icon + word carry the meaning; the
 # colour only reinforces it — never colour alone).
@@ -156,7 +156,7 @@ with strip_ph.container(horizontal=True):
 # cells of the row are skeletoned *before* either query runs, so the whole
 # bento reads as "loading" at once rather than one cell at a time, then each
 # swaps to real content as its data arrives. Static chrome (the box + its
-# title + the hand-off button) renders immediately — only the data area waits.
+# title) renders immediately — only the data area waits.
 routes = pd.DataFrame()  # populated for mobile; referenced again in the Routes tab
 cL, cR = st.columns([2, 1], gap="medium", vertical_alignment="top")
 if is_mobile:
@@ -167,11 +167,6 @@ if is_mobile:
             routemap_ph = st.empty()
             with routemap_ph.container():
                 skeleton.block(420)
-            st.button(
-                "Open in Time Series", icon=":material/open_in_full:",
-                on_click=hand_off_to_timeseries, args=(table,),
-                help="Full depth: aggregation bucket, rolling average, thresholds, annotations, flags.",
-            )
     with cR:
         with st.container(border=True, key="box_tripstats"):
             st.markdown("**:material/insights: This window**")
@@ -211,11 +206,6 @@ else:
             pmtrend_ph = st.empty()
             with pmtrend_ph.container():
                 skeleton.block(320)
-            st.button(
-                "Open in Time Series", icon=":material/open_in_full:",
-                on_click=hand_off_to_timeseries, args=(table,),
-                help="Full depth: aggregation bucket, rolling average, thresholds, annotations, flags.",
-            )
     with cR:
         with st.container(border=True, key="box_locmap"):
             st.markdown("**:material/location_on: Location**")

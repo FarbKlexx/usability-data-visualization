@@ -872,3 +872,46 @@ window that has data** (over a "no-comparison" hint or leaving it blank).
   24 h with data (to Nov 06)"; 7 d still uses the immediate prior window
   (delta +1.22, no "with data" suffix); "All" still shows no trend. `uv run
   pytest` → 28 passed; no page errors.
+
+## 26. Check color contrasts against WCAG 2.0
+
+> check the color contrasts, if they work according to WCAG 2.0
+
+**No code change — audit only.** Computed WCAG contrast ratios for every
+foreground/background pair in `.streamlit/config.toml` + `src/utils/palette.py`.
+
+**Scope note:** WCAG **2.0** only sets contrast minimums for *text*
+(1.4.3 AA 4.5:1 / 1.4.6 AAA 7:1; large text 3:1 / 4.5:1). It has **no**
+non-text-contrast rule (that is 1.4.11, added in WCAG 2.1), so chart fills,
+map markers, and component borders are out of WCAG-2.0 scope here.
+
+**Result — all actual on-screen text passes WCAG 2.0 AA:**
+- Body text: light `#1F2328` on canvas/white/secondary = 14.2–15.8:1 (**AAA**);
+  dark `#E6EDF3` on bg/secondary = 14.6–16.0:1 (**AAA**).
+- Links/primary: light blue `#0072B2` on canvas/white/secondary = 4.67–5.19:1
+  (**AA**, just under the 7:1 AAA bar); dark `#56B4E9` = 7.5–8.2:1 (**AAA**).
+- Raw palette accents (green/orange/red/yellow) fall **below** 4.5:1 as text on
+  white *in the abstract*, but they are never used as raw text — they appear as
+  chart fills/lines (backed by shape+label+position, satisfying 1.4.1) and as
+  Streamlit `:color-badge[…]` / `st.metric` deltas, whose fg/bg pairing is
+  managed by Streamlit's own (accessible) design system.
+
+**Out of WCAG-2.0 scope but flagged for 2.1 (1.4.11):** borders
+(`#D0D7DE` on white = 1.45:1; dark `#30363D` on bg = 1.55:1) and several chart
+hues sit under 3:1 against their backgrounds — fine for 2.0, would fail 2.1
+non-text contrast if borders were the sole means of identifying a component.
+
+## 27. Remove the "Open in Time Series" buttons from the Dashboard
+
+> remove the "Open In time series" buttons from the dashboard
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — removed both `st.button("Open in Time Series",
+  …, on_click=hand_off_to_timeseries, …)` calls: one under the mobile route-map
+  bento cell and one under the desktop PM-trend bento cell. The bento boxes now
+  show just their title + chart/map.
+- Dropped the now-unused `hand_off_to_timeseries` import from the
+  `src.utils.state` import line; updated the bento comment that referenced "the
+  hand-off button". (The `src.utils.state` helper itself is unchanged and still
+  used by the Map page's hand-off.)
