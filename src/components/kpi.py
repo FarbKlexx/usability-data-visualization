@@ -30,9 +30,6 @@ from src.utils.metrics import get
 # A rise in a pollutant is bad; climate/index measures are neutral.
 _INVERSE_DELTA = {"pm2_5", "pm10_0", "co2"}
 
-# CAQI level -> Streamlit badge color (reinforces the icon + label).
-_BAND_BADGE = {0: "green", 1: "blue", 2: "orange", 3: "red", 4: "violet"}
-
 
 def metric_tile(
     metric_key: str,
@@ -77,13 +74,15 @@ def metric_tile(
 
 
 def aqi_tile(band: CAQIBand | None) -> None:
-    """Render the computed CAQI air-quality band as a tile."""
-    with st.container(border=True, key="box_aqi"):
-        st.markdown(":material/speed: **Air quality**")
-        if band is None:
-            st.markdown(":gray-badge[:material/help: No data]")
-            st.caption("No PM reading available.")
-            return
-        color = _BAND_BADGE.get(band.level, "gray")
-        st.markdown(f":{color}-badge[{band.icon} {band.label}]")
-        st.caption("CAQI · computed", help=COMPUTED_NOTE)
+    """Render the computed CAQI air-quality band as a metric tile.
+
+    Rendered as a plain ``st.metric`` so the band word ("Very low") matches the
+    measurement tiles beside it — no badge colour or sentiment icon. The
+    colour/position encoding of the band lives on the hero meter instead.
+    """
+    st.metric(
+        ":material/speed: Air quality",
+        band.label if band is not None else "No data",
+        help=f"CAQI · computed — {COMPUTED_NOTE}",
+        border=True,
+    )

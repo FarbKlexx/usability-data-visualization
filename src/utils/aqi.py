@@ -83,6 +83,37 @@ def _band_for(value: float | None, attr: str) -> int | None:
     return CAQI_BANDS[-1].level  # pragma: no cover - inf guard
 
 
+# Continuous CiteAir CAQI sub-index breakpoints: (concentration µg/m³, index).
+# The band table above is the *stepped* version of this; these let us place a
+# marker *within* a band (so "just into Low" and "almost High" don't collapse to
+# one dot). Index runs 0 (cleanest) .. 100 (top of "High"); "Very high" caps at
+# 100 for placement. Same worse-of-PM2.5/PM10 rule as the band.
+_PM25_GRID: tuple[tuple[float, float], ...] = ((0, 0), (15, 25), (30, 50), (55, 75), (110, 100))
+_PM10_GRID: tuple[tuple[float, float], ...] = ((0, 0), (25, 25), (50, 50), (90, 75), (180, 100))
+
+
+def _subindex(value: float | None, grid: tuple[tuple[float, float], ...]) -> float | None:
+    """Linear-interpolate one pollutant's CAQI sub-index (0..100), or None."""
+    if value is None or (isinstance(value, float) and math.isnan(value)) or value < 0:
+        return None
+    if value >= grid[-1][0]:
+        return 100.0  # at/above the "Very high" floor — pin to the worst end
+    for (c0, i0), (c1, i1) in zip(grid, grid[1:]):
+        if value <= c1:
+            return i0 + (i1 - i0) * (value - c0) / (c1 - c0)
+    return 100.0  # pragma: no cover - covered by the >= guard above
+
+
+def caqi_index(pm2_5: float | None = None, pm10: float | None = None) -> float | None:
+    """Continuous CAQI index (0 cleanest .. 100 worst), worse of PM2.5/PM10.
+
+    The companion to :func:`caqi_band` for *positioning* (e.g. a marker on a
+    red→green meter); returns ``None`` when neither pollutant is usable.
+    """
+    subs = [s for s in (_subindex(pm2_5, _PM25_GRID), _subindex(pm10, _PM10_GRID)) if s is not None]
+    return max(subs) if subs else None
+
+
 def caqi_band(pm2_5: float | None = None, pm10: float | None = None) -> CAQIBand | None:
     """Classify a reading into a CAQI band (worse of PM2.5 / PM10).
 

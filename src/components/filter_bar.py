@@ -168,15 +168,16 @@ def filter_bar(
     delta = RANGE_PRESETS[range_key]
     start = first_ts.to_pydatetime() if delta is None else (last_ts - delta).to_pydatetime()
 
-    _render_chips([labels.get(t, t) for t in tables], range_key, start, end)
+    _render_window(start, end)
     return FilterState(tables, [labels.get(t, t) for t in tables], start, end, range_key)
 
 
-def _render_chips(sensor_labels: list[str], range_key: str, start: datetime, end: datetime) -> None:
-    """Echo the active filters back as badges (closure + memory relief)."""
+def _render_window(start: datetime, end: datetime) -> None:
+    """Echo the *resolved* time window back as a badge (Shneiderman #3 feedback).
+
+    The selected sensor(s) and the range preset are already shown by the picker
+    and the segmented control above, so re-printing them as chips was redundant;
+    only the concrete start→end window the preset resolves to is new information.
+    """
     span = f"{start:%Y-%m-%d %H:%M} → {end:%Y-%m-%d %H:%M}"
-    chips = " ".join(f":blue-badge[:material/sensors: {lbl}]" for lbl in sensor_labels)
-    st.markdown(
-        f"{chips}  :gray-badge[:material/schedule: {range_key}]  "
-        f":gray-badge[:material/date_range: {span}]"
-    )
+    st.markdown(f":gray-badge[:material/date_range: {span}]")

@@ -160,6 +160,74 @@ st.html(
         border-color: transparent;
     }
 
+    /* Filter bar: the segmented Time-range pills render shorter than the sensor
+       select beside them, so the two controls didn't line up. Pin the pills to
+       Streamlit's standard control height (the minElementHeight token, 2.5rem,
+       which the select uses) — same rem unit, so they match at any root size. */
+    .st-key-ov_bar [data-testid^="stBaseButton-segmented_control"],
+    .st-key-ts_bar [data-testid^="stBaseButton-segmented_control"],
+    .st-key-cmp_bar [data-testid^="stBaseButton-segmented_control"] {
+        min-height: 2.5rem;
+    }
+
+    /* --- Equal-height bento cards ------------------------------------------
+       Zone 3 is a 2-cell row: the primary chart (or route map) beside its
+       location-map / trip-stats context. Each st.container(border=True) sizes
+       to its own content, so the cell with less below its chart (no "Full map"
+       link, fewer trip tiles) ends up shorter and the row reads ragged.
+       Streamlit exposes no "equal-height columns" knob, so stretch the row's
+       columns to a shared height and let each card fill its column — the chart
+       card and the map card then share one bottom edge. Scoped by :has() to the
+       rows that actually hold a bento box, so the hero/KPI rows are untouched;
+       vertical_alignment="top" sets align-self on the columns, so it is
+       overridden to stretch here. Guarded to wide viewports — on phones the
+       columns stack, where equal height is meaningless. */
+    @media (min-width: 768px) {
+        [data-testid="stHorizontalBlock"]:has(.st-key-box_pmtrend),
+        [data-testid="stHorizontalBlock"]:has(.st-key-box_routemap) {
+            align-items: stretch;
+        }
+        [data-testid="stHorizontalBlock"]:has(.st-key-box_pmtrend) > [data-testid="stColumn"],
+        [data-testid="stHorizontalBlock"]:has(.st-key-box_routemap) > [data-testid="stColumn"] {
+            align-self: stretch;
+        }
+        [data-testid="stHorizontalBlock"]:has(.st-key-box_pmtrend) > [data-testid="stColumn"] > [data-testid="stVerticalBlock"],
+        [data-testid="stHorizontalBlock"]:has(.st-key-box_routemap) > [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {
+            height: 100%;
+        }
+        .st-key-box_pmtrend, .st-key-box_locmap,
+        .st-key-box_routemap, .st-key-box_tripstats {
+            height: 100%;
+        }
+    }
+
+    /* Air-quality meter (markup from src/components/meter.py): a slim pill bar
+       with a fixed red→amber→green gradient and a positioned marker. Same
+       documented escape hatch as the skeletons — the static look is here, only
+       the marker's left offset + fill colour come inline per value. The
+       left=worst / right=best ordering + the marker position are the real
+       signal, so colour-blind readers lose nothing (colour is never the only
+       channel). Gradient colours are the Okabe-Ito severity ramp; fixed in both
+       themes because the semantics (red=bad, green=good) are theme-independent. */
+    .aq-meter {
+        position: relative;
+        height: 8px;
+        margin: 0.35rem 0 0.15rem;
+        border-radius: 999px;
+        background: linear-gradient(90deg,
+            #D55E00 0%, #E69F00 35%, #F0E442 60%, #009E73 100%);
+    }
+    .aq-meter-dot {
+        position: absolute;
+        top: 50%;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        border: 3px solid #ffffff;
+        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.45);
+    }
+
     /* Streamlit's fixed top bar is transparent by default, so it shows the
        off-white canvas through it. Fill it to match the cards (white in light,
        the elevated surface in dark) — no config token exists for it. */

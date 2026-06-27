@@ -915,3 +915,240 @@ non-text contrast if borders were the sole means of identifying a component.
   `src.utils.state` import line; updated the bento comment that referenced "the
   hand-off button". (The `src.utils.state` helper itself is unchanged and still
   used by the Map page's hand-off.)
+
+## 28. Equal-height bento cards (graph / map row)
+
+> make sure that the graph and the map sections have the same height, same for all boxes that are aligned in the same row
+
+**Summary of changes:**
+
+- **`app.py`** (documented `st.html(<style>)` exception) — added an
+  equal-height rule for the Dashboard's Zone-3 bento row. Each bento cell is its
+  own `st.container(border=True)` that sized to its own content, so the cell with
+  a "Full map" link (or fewer trip-stat tiles) was shorter than its neighbour and
+  the row read ragged. Streamlit has no equal-height-columns knob, so the rule
+  (scoped via `:has()` to rows containing `.st-key-box_pmtrend` /
+  `.st-key-box_routemap`) sets the row to `align-items: stretch`, overrides the
+  per-column `align-self` that `vertical_alignment="top"` applies, makes the
+  column's vertical block `height:100%`, and lets each bordered card
+  (`box_pmtrend`/`box_locmap` desktop, `box_routemap`/`box_tripstats` mobile)
+  fill its column — so the graph card and the map card share one bottom edge.
+  Guarded to `@media (min-width:768px)` (columns stack on phones, where equal
+  height is moot). Degrades gracefully: no `:has()`/CSS → the prior
+  content-sized cards, never broken.
+
+## 29. Move "Full map" link to the top-right of its box
+
+> replace the "Full Map" button to the top right of its box
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — in the desktop `box_locmap` (Location) bento
+  cell, moved the `st.page_link("Full map")` from the bottom of the box up into
+  a header row beside the "Location" title. The header is a two-column row
+  (`st.columns([1, 1], vertical_alignment="center")`): the title on the left, and
+  the link in a right-aligned horizontal container
+  (`horizontal_alignment="right"`) so it sits flush to the box's top-right
+  corner. The map then renders directly below the header.
+
+## 30. Move the CAQI tooltip up to the "Air quality" title
+
+> in the airquality box, put the tool tip thats next to "CAQI · computed" on the top next to " Air quality"
+
+**Summary of changes:**
+
+- **`src/components/kpi.py`** (`aqi_tile`) — moved the `help=COMPUTED_NOTE`
+  tooltip from the "CAQI · computed" caption up to the ":material/speed: **Air
+  quality**" title (`st.markdown(..., help=COMPUTED_NOTE)`). The caption now
+  reads plain "CAQI · computed" with no tooltip; the (?) hint sits next to the
+  box title at the top.
+
+## 31. Remove the redundant PM2.5 tile from the hero box
+
+> remove the pm2.5 box out of the "SENSORpi s01 · Minden — air quality: Good" box since its already below it and redundant
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — removed the dominant-pollutant metric tile
+  (PM2.5, formerly the hero's right-hand `hR` column) from the Zone-1 hero card.
+  It duplicated the PM2.5 KPI tile in the strip directly below it. Dropped the
+  `st.columns([0.62, 0.38])` split and the `dom_key` logic; the verdict
+  (subheader + CAQI badge + advice + meta caption) now spans the full hero
+  width. `metric_tile` is still imported/used by the KPI strip, so the import is
+  unchanged.
+
+## 32. Drop the redundant sensor/range echo chips from the filter bar
+
+> also remove " Stationary · SENSORpi s01 · Minden 7 d" because its literally directly displayed in the selection obove these tags
+
+**Summary of changes:**
+
+- **`src/components/filter_bar.py`** — the active-filter echo row (`_render_chips`)
+  printed the selected sensor label(s) as blue badges + the range preset as a
+  gray badge + the resolved start→end span. The sensor and the range preset are
+  already shown by the multiselect/selectbox and the segmented control directly
+  above, so those chips were redundant. Renamed `_render_chips` →
+  `_render_window`, which now emits only the concrete resolved time-window badge
+  (`:material/date_range:` start→end) — the one piece the picker doesn't show
+  (kept as Shneiderman #3 feedback). Updated the call site; no other references.
+  Applies to every filter bar (Dashboard `ov`, Time Series `ts`, Compare `cmp`).
+
+## 33. Slim hero verdict + red→green air-quality meter
+
+> also this is redundant: "SENSORpi s01 · Minden — air quality: Good / CAQI: Very low   Air quality is good — particulate pollution is very low." Just make it "Air Quality: Good" with a tool tip for "CAQI from PM2.5/PM10 · 7 d average · through 2025-11-11 11:09". Below it put a bar coloured red→green with a dot showing where the current air quality is (red = very bad, green = very good); slim bar, rounded on both sides, block dot with white outline.
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — collapsed the Zone-1 hero to a single verdict
+  line `:{icon}: Air quality: {quality}` with the provenance/window string
+  (`CAQI from PM2.5/PM10 · <avg> average · through <ts>`) moved into the
+  heading's `help` tooltip. Removed the device name (already in the picker), the
+  `:badge[CAQI: …]` line, and the advice sentence (all restated the verdict).
+  Below the heading it now renders the new meter at a marker position derived
+  from the continuous CAQI index. Dropped the now-unused `device_label` import,
+  `device_name` var, and `_BAND_BADGE` map; swapped `COMPUTED_NOTE` import for
+  `caqi_index`.
+- **`src/utils/aqi.py`** — added `caqi_index(pm2_5, pm10)`: a continuous CiteAir
+  CAQI index (0 cleanest .. 100 worst, worse-of-the-two via linear interpolation
+  between the band breakpoints), the positioning companion to the stepped
+  `caqi_band`. Plus `_subindex` + the `_PM25_GRID`/`_PM10_GRID` breakpoints.
+- **`src/components/meter.py`** (new) — `air_quality_meter(position, dot_color)`:
+  emits the meter markup (`st.html`, same escape hatch as `skeleton.py`). Only
+  the marker's `left` offset and fill colour are inline; everything static is in
+  app.py CSS. `position` is 0 (worst/red/left) .. 1 (best/green/right).
+- **`app.py`** — added `.aq-meter` (slim 8px pill, `border-radius:999px`, fixed
+  red→amber→green Okabe-Ito gradient) and `.aq-meter-dot` (16px round marker,
+  3px white ring + soft shadow, centred on its `left` offset) to the documented
+  `st.html(<style>)` block.
+- **`src/components/skeleton.py`** — `hero()` skeleton reshaped to match: a
+  heading bar above a slim full-width meter bar (was a two-column heading+tile).
+- Colour is never the only channel: the verdict word + the marker's spatial
+  position + the hue triple-encode the value. `uv run pytest` → 28 passed.
+
+## 34. Fold "CAQI · computed" caption into the Air quality tile tooltip
+
+> from the airquality box remove "CAQI · computed" and put it in the tooltip
+
+**Summary of changes:**
+
+- **`src/components/kpi.py`** (`aqi_tile`) — removed the `st.caption("CAQI ·
+  computed")` line from the Air quality KPI tile and folded the text into the
+  title's tooltip: the "Air quality" heading's `help` is now
+  `f"CAQI · computed — {COMPUTED_NOTE}"`. The tile now shows just the title +
+  the band badge, with the provenance available on hover.
+
+## 35. Equal-height KPI strip (CAQI tile matches the metric tiles)
+
+> make sure this box has the same height as the other on in its row anyways
+
+**Summary of changes:**
+
+- **`app.py`** — after removing the "CAQI · computed" caption, the Air quality
+  (`box_aqi`) tile was shorter than the `st.metric` tiles in the KPI strip. The
+  strip is a horizontal container with the default `vertical_alignment="top"`
+  (`align-items:flex-start`), so tiles size to their own content. Added a
+  `:has(.st-key-box_aqi)`-scoped rule to the documented `st.html(<style>)` block:
+  sets the strip to `align-items:stretch`, stretches its flex children
+  (`stElementContainer`), and gives `.st-key-box_aqi` + the `stMetric` cards
+  `height:100%`, so the CAQI tile matches the metric tiles' height. Degrades
+  gracefully (no `:has()` → the prior content-sized tiles).
+
+## 36. Match the time-range selector height to the sensor selector
+
+> make the time range selector the same height as the sensor selector
+
+**Summary of changes:**
+
+- **`app.py`** — the segmented Time-range control renders shorter than the
+  sensor select beside it in the filter bar, so they didn't line up. Added a rule
+  (scoped to the three filter-bar keys `.st-key-ov_bar` / `.st-key-ts_bar` /
+  `.st-key-cmp_bar`) pinning the segmented-control pills
+  (`[data-testid^="stBaseButton-segmented_control"]`, covers active + inactive)
+  to `min-height: 2.5rem` — Streamlit's standard control height
+  (`minElementHeight`), which the selectbox/multiselect already use. Same rem
+  unit on the same root, so they match at any base font size. Documented
+  `st.html(<style>)` exception; degrades gracefully to the prior shorter pills.
+
+## 37. Style the strip trend caption as a grey badge
+
+> make the text "24 h average · trend vs. previous 24 h with data (to Nov 06)" have the same styling as the text "2025-11-10 11:09 → 2025-11-11 11:09" (grey background)
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — the KPI-strip trend label (avg window + "trend
+  vs. …") was a plain `st.caption`; rendered it as a grey badge
+  (`cap_ph.markdown(f":gray-badge[{strip_cap}]")`) so it matches the grey
+  time-window badge under the filter bar (`_render_window`). The
+  `:material/schedule:` icon stays inside the badge.
+
+## 38. Match the graph↔map gap to the KPI tile gap
+
+> make the vertical gap between the graph and map the same size as the horizontal gap to the kpis
+
+Clarified via a question: the user wanted the graph↔map gap shrunk to match the
+KPI tile spacing (rather than growing the vertical space above the bento).
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — changed the Zone-3 bento row from
+  `st.columns([2, 1], gap="medium", …)` to `gap="small"`, so the horizontal gap
+  between the graph and map cards matches the gap between the KPI strip tiles
+  (the strip's `st.container(horizontal=True)` uses the default `small` gap).
+
+## 39. Remove the divider above the Compare/Correlation tabs
+
+> remove the divider above the compare and correlation tabs
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — removed the `st.divider()` that sat between the
+  Zone-3 bento and the secondary tab strip (Compare / Correlation / Routes). The
+  tabs now follow the bento directly. Updated the module docstring's layout
+  description to drop the "one st.divider" mention.
+
+## 40. Render the CAQI tile as a plain metric (match the strip tiles)
+
+> in the box "Air quality / Very low" make the Text "Very low" match the other boxes in this row, remove the green and the smiley
+
+**Summary of changes:**
+
+- **`src/components/kpi.py`** (`aqi_tile`) — replaced the bordered container +
+  coloured `:{color}-badge[{icon} {label}]` with a plain `st.metric(":material/
+  speed: Air quality", band.label, help="CAQI · computed — …", border=True)`. The
+  band word ("Very low") now renders in the same big value typography as the
+  measurement tiles beside it; removed the green badge colour and the sentiment
+  smiley. Dropped the now-unused `_BAND_BADGE` map. (The colour/position encoding
+  of the band still lives on the hero meter, so it isn't lost overall.)
+- **`app.py`** — removed the now-dead `:has(.st-key-box_aqi)` equal-height CSS:
+  the CAQI tile is a `st.metric` like the others now, so the strip tiles are
+  uniform height inherently (no `box_aqi` container exists anymore).
+- `uv run pytest` → 28 passed.
+
+## 41. Equal-height KPI strip again (CAQI metric has no delta row)
+
+> again, the height has to match the other boxes in this row
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — gave the KPI-strip horizontal container a
+  `key="kpi_strip"` so it can be targeted in CSS.
+- **`app.py`** — re-added an equal-height rule, now scoped to `.st-key-kpi_strip`:
+  the measurement tiles carry a trend-delta arrow row but the CAQI `st.metric`
+  has no delta, so it rendered shorter. The rule sets the strip to
+  `align-items:stretch`, stretches its `stElementContainer` children, and gives
+  the `stMetric` cards `height:100%`, so all tiles in the strip share one height.
+
+## 42. Remove the CAQI tile from the KPI strip
+
+> nevermind, just remove this box
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — removed the `aqi_tile(band)` call from the KPI
+  strip (the strip now shows only the HEADLINE_KPIS measurement tiles). Dropped
+  the `aqi_tile` import and the `key="kpi_strip"` added for the equal-height
+  attempt.
+- **`app.py`** — removed the now-unneeded `.st-key-kpi_strip` equal-height CSS.
+- `aqi_tile` itself is kept (still used by the Map page's details-on-demand CAQI
+  tile); `band` is still used by the hero verdict + meter. `uv run pytest` → 28
+  passed.

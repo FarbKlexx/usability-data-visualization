@@ -56,15 +56,8 @@ def block(height: int | str = 280) -> None:
 
 
 def hero() -> None:
-    """Skeleton for the hero card: a heading + verdict + caption beside a tile."""
-    left = _bar("65%", "1.6rem") + _bar("85%", "1rem", "0.7rem") + _bar("45%", "0.8rem", "0.7rem")
-    right = _bar("100%", "4.5rem")
-    _emit(
-        "<div class='aq-skel-row' style='align-items:center'>"
-        f"<div style='flex:1 1 60%'>{left}</div>"
-        f"<div style='flex:1 1 30%'>{right}</div>"
-        "</div>"
-    )
+    """Skeleton for the hero card: a verdict heading above the slim AQ meter."""
+    _emit(_bar("55%", "1.6rem") + _bar("100%", "8px", "0.8rem"))
 
 
 def tiles(n: int) -> None:

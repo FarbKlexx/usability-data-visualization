@@ -13,9 +13,8 @@ fixed top-to-bottom hierarchy that clears a laptop fold without scrolling:
 * **Zone 3 — bento** (Split-Attention, asymmetry = hierarchy): a wide
   ``[2,1]`` row — the PM trend (or route map) leads, a near-square
   location map / trip stats sits beside it (no full-width letterbox map).
-* one ``st.divider`` → **slim tabs** (Hick, progressive disclosure):
-  *Compare* (folded-in multi-sensor comparison), *Correlation*, and, for
-  mobile, *Routes*.
+* **slim tabs** (Hick, progressive disclosure): *Compare* (folded-in
+  multi-sensor comparison), *Correlation*, and, for mobile, *Routes*.
 
 Operating hints live in tooltips, not standing prose; only honest-data
 disclosures (hidden sentinels, "CAQI computed") stay on screen.
@@ -30,8 +29,8 @@ import streamlit as st
 
 from app_pages.comparison import render_compare
 from src.components import charts, filter_bar, skeleton
-from src.components.filter_bar import device_label
-from src.components.kpi import aqi_tile, metric_tile
+from src.components.kpi import metric_tile
+from src.components.meter import air_quality_meter
 from src.data import (
     available_metrics,
     build_comparison_frame,
@@ -41,15 +40,12 @@ from src.data import (
     load_routes,
     load_timeseries,
 )
-from src.utils.aqi import COMPUTED_NOTE, caqi_band
+from src.utils.aqi import caqi_band, caqi_index
 from src.utils.clean import hidden_notice
 from src.utils.correlate import compute_correlation, correlation_verdict, normalize_frame
 from src.utils.metrics import HEADLINE_KPIS, get
 from src.utils.state import csv_split, publish_query_params, seed_session_defaults
 
-# CAQI level → Streamlit badge colour (icon + word carry the meaning; the
-# colour only reinforces it — never colour alone).
-_BAND_BADGE = {0: "green", 1: "blue", 2: "orange", 3: "red", 4: "violet"}
 # Route split-gap presets (label → seconds); default 1 h (plan locked decision).
 _GAP_PRESETS = {"15 min": 900, "30 min": 1800, "1 hour": 3600, "2 hours": 7200, "6 hours": 21600}
 _PLOT = {"theme": "streamlit", "width": "stretch", "config": {"displaylogo": False}}
@@ -79,7 +75,6 @@ if fs.is_empty:
 table = fs.tables[0]
 drow = devices[devices["table_name"] == table].iloc[0]
 is_mobile = bool(drow["is_mobile"])
-device_name = device_label(drow)  # clean "name · city", no type prefix
 
 # Snapshot for the hero, the KPI strip and the CAQI verdict. Everything here
 # is the **mean over the selected range** (so the tiles change with the time
@@ -119,29 +114,29 @@ else:
 strip_cap = f":material/schedule: {avg_label[:1].upper()}{avg_label[1:]}"
 if prev_label:
     strip_cap += f" · trend vs. {prev_label}"
-cap_ph.caption(strip_cap)
+# Render as a grey badge (not a plain caption) to match the time-window badge
+# under the filter bar.
+cap_ph.markdown(f":gray-badge[{strip_cap}]")
 
 with hero_ph.container(border=True, key="box_hero"):
-    hL, hR = st.columns([0.62, 0.38], gap="medium", vertical_alignment="center")
-    with hL:
-        if band is None:
-            st.subheader(f":material/help: {device_name} — air quality: no reading in range")
-            st.caption("No usable PM2.5/PM10 reading in the selected range.")
-        else:
-            st.subheader(f"{band.icon} {device_name} — air quality: {band.quality}")
-            st.markdown(f":{_BAND_BADGE.get(band.level, 'gray')}-badge[CAQI: {band.label}] &nbsp; {band.advice}")
-            meta = f"CAQI from PM2.5/PM10 · {avg_label}"
-            if latest_ts is not None:
-                meta += f" · through {latest_ts:%Y-%m-%d %H:%M}"
-            st.caption(meta, help=COMPUTED_NOTE)
-    with hR:
-        # Dominant-pollutant headline number paired with the verdict (IQAir pattern).
-        dom_key = "pm2_5" if vals.get("pm2_5", (None,))[0] is not None else "pm10_0"
-        if vals.get(dom_key, (None,))[0] is not None:
-            metric_tile(
-                dom_key, *vals.get(dom_key, (None, None)),
-                value_desc=avg_label, baseline_label=prev_label or "previous period",
-            )
+    # The hero is just the verdict word + a red→green meter now: the device name
+    # is already in the picker above, the dominant-PM number duplicated the KPI
+    # strip below, and the CAQI badge + advice line restated the verdict. The
+    # provenance/window line (formerly a caption) is folded into the heading's
+    # tooltip. The meter's marker position carries the value spatially, so the
+    # word + position + hue triple-encode it (colour never the only channel).
+    if band is None:
+        st.subheader(":material/help: Air quality: no reading in range")
+        st.caption("No usable PM2.5/PM10 reading in the selected range.")
+    else:
+        meta = f"CAQI from PM2.5/PM10 · {avg_label}"
+        if latest_ts is not None:
+            meta += f" · through {latest_ts:%Y-%m-%d %H:%M}"
+        st.subheader(f"{band.icon} Air quality: {band.quality}", help=meta)
+        idx = caqi_index(vals.get("pm2_5", (None,))[0], vals.get("pm10_0", (None,))[0])
+        if idx is not None:
+            # idx: 0 cleanest .. 100 worst → marker position 1 (green/right) .. 0 (red/left).
+            air_quality_meter(1.0 - min(idx, 100.0) / 100.0, band.color)
 
 with strip_ph.container(horizontal=True):
     for key in (k for k in HEADLINE_KPIS if k in vals):
@@ -149,7 +144,6 @@ with strip_ph.container(horizontal=True):
             key, *vals.get(key, (None, None)),
             value_desc=avg_label, baseline_label=prev_label or "previous period",
         )
-    aqi_tile(band)
 
 # === ZONE 3: bento — primary visual beside its spatial/trip context ==========
 # Each cell shows a chart/map/stat-shaped skeleton while its loader runs. Both
@@ -158,7 +152,7 @@ with strip_ph.container(horizontal=True):
 # swaps to real content as its data arrives. Static chrome (the box + its
 # title) renders immediately — only the data area waits.
 routes = pd.DataFrame()  # populated for mobile; referenced again in the Routes tab
-cL, cR = st.columns([2, 1], gap="medium", vertical_alignment="top")
+cL, cR = st.columns([2, 1], gap="small", vertical_alignment="top")
 if is_mobile:
     gap_seconds = int(st.session_state.get("ov_route_gap", 3600))
     with cL:
@@ -208,11 +202,13 @@ else:
                 skeleton.block(320)
     with cR:
         with st.container(border=True, key="box_locmap"):
-            st.markdown("**:material/location_on: Location**")
+            loc_title, loc_action = st.columns([1, 1], vertical_alignment="center")
+            loc_title.markdown("**:material/location_on: Location**")
+            with loc_action.container(horizontal=True, horizontal_alignment="right"):
+                st.page_link("app_pages/map.py", label="Full map", icon=":material/open_in_full:")
             locmap_ph = st.empty()
             with locmap_ph.container():
                 skeleton.block(320)
-            st.page_link("app_pages/map.py", label="Full map", icon=":material/open_in_full:")
     # Both skeletons painted; load each cell and swap it in.
     ts_df, ts_hidden, _ = load_timeseries(table, ("pm2_5", "pm10_0"), fs.start, fs.end)
     with pmtrend_ph.container():
@@ -231,8 +227,6 @@ else:
                 charts.map_figure(charts.build_location_markers(loc_one), height=320, show_text=True),
                 **_MAP_PLOT,
             )
-
-st.divider()
 
 # === SECONDARY: tabs (progressive disclosure, Hick) =========================
 tab_keys = (["routes", "compare", "correlation"] if is_mobile else ["compare", "correlation"])
