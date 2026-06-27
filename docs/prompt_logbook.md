@@ -1152,3 +1152,429 @@ KPI tile spacing (rather than growing the vertical space above the bento).
 - `aqi_tile` itself is kept (still used by the Map page's details-on-demand CAQI
   tile); `band` is still used by the hero verdict + meter. `uv run pytest` → 28
   passed.
+
+## 43. Move Compare and Correlation out of the Dashboard into their own pages
+
+> remove the sections compare and correlation from the dashboard and move them into their own pages
+
+**Summary of changes:**
+
+- **`app_pages/compare.py`** (new) — thin top-level page: title + caption +
+  `render_compare()` (the body still lives in `comparison.py` with its own `cmp`
+  multi-sensor toolbar).
+- **`app_pages/correlation.py`** (new) — standalone page carrying the verdict-first
+  |r| correlation UI lifted from the Dashboard's old Correlation tab, now with its
+  own single-sensor `corr` toolbar and bookmarkable URL state (`corr_sensors` /
+  `corr_range` / `corr_measures`).
+- **`app.py`** — registered both pages in the *Monitor & Analyse* nav group
+  (Dashboard, Time Series, **Compare**, **Correlation**, Map) with
+  `:material/compare_arrows:` / `:material/scatter_plot:` icons. Added
+  `.st-key-corr_bar` to the two shared filter-bar CSS rules (card styling +
+  segmented-control height) so the new toolbar matches the others.
+- **`app_pages/dashboard.py`** — removed the secondary tab strip and both the
+  Compare and Correlation tab bodies. The mobile-only **Routes** inspector, which
+  previously shared that tab strip, now renders as a plain section (subheader, no
+  tabs). Dropped the now-unused imports (`itertools`, `render_compare`,
+  `build_comparison_frame`, `available_metrics`, the `correlate` helpers, `get`,
+  `csv_split`); trimmed `seed_session_defaults`/`publish_query_params` to
+  `ov_sensors`/`ov_range` (no more `ov_corr`); fixed the KPI skeleton count
+  (`len(HEADLINE_KPIS)`, the CAQI tile is gone); updated the module docstring and
+  the route-map tooltip ("Routes section" not "Routes tab").
+- **`CLAUDE.md`** — updated the file-tree note, the Pages table (new Compare +
+  Correlation rows; Dashboard row no longer lists tabs), the "no longer a page"
+  paragraph, the navigation section/icon lists, and the skeleton-wiring note.
+- `uv run pytest` → 28 passed.
+
+## 44. Dashboard per-device entry list + clickable route detail page
+
+> now in the dashboard, add a list of the corresponding points, with the most important information per point. for the mobile devices list the corresponding routes. the routes should be clickable and should open a new page that displays the most important information about this route: stats, then the route displayed on a map etc. the whole styling and layout should follow the dashboard
+
+Clarified "points" via a question: it means the sensor's **data points / readings**
+for the picked sensor + duration, most-recent-first, with lazy "load more".
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — added a per-device entry list below the bento:
+  - **Stationary** → a **Recent readings** card (`box_points`): `load_raw_readings`
+    for the newest `ov_points_n` rows (default 25) in the picked range, sentinels
+    blanked via `clean_frame`, a computed CAQI word per row, shown as a
+    `st.dataframe` with metric-registry column config; a **Load more** button
+    grows `ov_points_n` by 25 (lazy loading — only fetches what's shown; the
+    button hides once a short page comes back).
+  - **Mobile** → the **Routes** section is now one clickable `st.button` per trip
+    (Route N · time span · points · duration · mean PM2.5). Click →
+    `st.switch_page("app_pages/route.py", query_params=…)`. (Buttons, not a
+    selectable dataframe, because a dataframe selection persists in session_state
+    and would re-fire the page switch on every return.) Re-added the `get` /
+    `load_raw_readings` / `clean_frame` imports.
+- **`app_pages/route.py`** (new, hidden page) — the route drill-down, styled like
+  the cockpit: reads `route_table`/`route_id`/`route_gap`/`route_start`/`route_end`
+  from the URL, re-segments via `load_routes`, isolates the trip, then renders a
+  verdict hero + red→green meter (CAQI from mean PM2.5) → a KPI strip (points,
+  duration, **distance** via a haversine helper, mean/max PM2.5) → the route on a
+  map → PM2.5 over time. Graceful messages + a "Back to Dashboard" link when the
+  params are missing/stale.
+- **`app.py`** — registered `route.py` with `visibility="hidden"` (navigable via
+  `switch_page`, not shown in the rail).
+- **`CLAUDE.md`** — documented the new list, the Route detail page, and the
+  hidden-page mechanism.
+- Smoke-tested both data paths against the live DB (stationary readings + CAQI
+  words; mobile m01 → 28 routes, route 0 = 490 pts / 11.2 km / mean PM 2.3).
+  `uv run pytest` → 28 passed.
+
+## 45. Equal-width KPI strip tiles
+
+> make the tiles [PM2.5 / PM10 / CO₂ / Temp / Humidity] … also have the same width
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — the KPI strip used a horizontal container, which
+  sized each tile to its own content (so tiles differed in width). Switched to
+  `st.columns(len(strip_keys))` and rendered one `metric_tile` per column, so the
+  row splits evenly and every KPI card is the same width.
+
+## 46. Remove Time Series / Compare / Map pages; "Full map" → in-place overlay
+
+> remove the time series, compare and map pages. when clicking "Full Map" i just want an overlay of the map with the corresponding point / Route drawn into it
+
+**Summary of changes:**
+
+- **`app.py`** — unregistered the Time Series, Compare and Map pages. Nav is now
+  *Monitor & Analyse* (Dashboard, Correlation) + *Reference & Settings* (Devices,
+  Settings), plus the hidden Route detail page.
+- **Deleted** `app_pages/timeseries.py`, `app_pages/compare.py`,
+  `app_pages/comparison.py` (orphaned once Compare went), `app_pages/map.py`.
+- **`app_pages/dashboard.py`** — "Full map" no longer links to the Map page; it
+  opens a modal **map overlay** via `@st.dialog(width="large")`:
+  - stationary `box_locmap` → `_location_overlay(loc_one)` (the device's location
+    point on a big interactive map);
+  - mobile `box_routemap` → got a "Full map" button → `_routes_overlay(routes)`
+    (the device's routes drawn in). Buttons capture the click into a local and the
+    dialog is invoked *after* the cell's data has loaded (so the data is in scope),
+    which also avoids any reopen-on-rerun loop.
+- **`app_pages/settings.py`** — removed the now-broken `st.page_link` to Time
+  Series and the entire **Saved views** expander (it could only be created/applied
+  on the removed Time Series page); dropped the unused `load_saved_views` /
+  `delete_view` imports and trimmed the docstring. Threshold add/delete stays.
+- **`CLAUDE.md`** — updated the file tree, Pages table, navigation section + icon
+  list, and skeleton-wiring note to drop the three removed pages and describe the
+  Full-map overlay.
+- Note: `src/utils/state.py::hand_off_to_timeseries` is now orphaned (its only
+  caller was the Map page) — left in place, uncalled; flag for later cleanup.
+- `uv run pytest` → 28 passed.
+
+## 47. Make the mobile routes read as a list of cards, not stacked buttons
+
+> the list of routes looks weird, because its not really a list. it looks like a bunch of buttons below each other
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — replaced the full-width route buttons with one
+  bordered **card per trip** (`box_route_<id>`, so it picks up the dashboard card
+  styling): the trip facts on the left (Route N · time span + grey badges for
+  points / hours / mean PM2.5) and a small right-aligned **Open** button that
+  switches to the Route detail page. Reads as a list of cards rather than a stack
+  of buttons.
+
+## 48. Make routes clickable on the map too
+
+> can you make it so that the route is clickable also on the map?
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** (`route_map`) — added `route_id` as a second
+  customdata column on the PM-point markers (`customdata[1]`), so a clicked map
+  point can be resolved to its trip. The hovertemplate still uses
+  `customdata[0]` (the PM value), unchanged.
+- **`app_pages/dashboard.py`** — the Dashboard route map now renders with
+  `on_select="rerun"`, `selection_mode="points"` and a key. Clicking a point
+  reads `customdata[1]` → `route_id` and `st.switch_page`s to the Route detail
+  page (same query params as the list cards). A signature guard
+  (`ov_routemap_nav`) prevents the restored selection from re-firing the switch
+  when you navigate back. Caption updated to "click a point to open that trip."
+- `uv run pytest` → 28 passed; verified `route_map` builds with the 2-col
+  customdata against live mobile data.
+
+## 49. Fix route-map click (KeyError) + hover/cursor affordance
+
+> when you click a route this happens [KeyError: 1 at int(cd[1])] ... i want it to link to the corresponding route page. also add some user feedback if you hover a route, and a pointer so the user knows it clickable
+
+**Diagnosis:** the plotly selection `customdata` did not arrive as a plain list,
+so `cd[1]` raised `KeyError: 1` (it came through keyed by index, i.e. a dict).
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — made the click handler robust: if `customdata`
+  is a dict, rebuild it into an index-ordered list; then read `route_id` at
+  index 1; if that fails, **fall back** to matching the clicked point's
+  `lat`/`lon` (or `x`/`y`) against the `routes` frame to find the trip. Only
+  navigates when a `route_id` resolves (kept the signature guard against
+  re-firing on navigate-back). This fixes the crash so a click opens the
+  corresponding Route detail page.
+- **`src/components/charts.py`** (`route_map`) — added a `clickable` flag; when
+  set, the PM-point hover tooltip appends *"Click to open this trip →"* so
+  hovering signals the action. Dashboard passes `clickable=True`; the Route
+  detail map leaves it off.
+- **`app.py`** — added a pointer-cursor rule scoped to the Dashboard route map
+  (`.st-key-box_routemap .maplibregl-canvas-container.maplibregl-interactive`),
+  so the map shows a pointer (MapLibre defaults to a grab cursor).
+- **`app_pages/route.py`** — renamed the detail map container to
+  `box_routedetailmap` so the pointer cursor + click affordance apply only to
+  the clickable Dashboard map.
+- `uv run pytest` → 28 passed.
+
+## 50. Route map: pointer only on hover + highlight the hovered trip
+
+> only add a pointer when you actually hover a route, not all the time in the map view. also when you hover close to a route make the whole route be highlighted if thats possible via openstreet map
+
+**Summary of changes:**
+
+- **`app.py`** — removed the always-on pointer-cursor CSS on the route map.
+- **`app_pages/dashboard.py`** — added a 0-height same-origin `components.html`
+  iframe (mobile only; same documented escape hatch as the sticky-bar watcher)
+  that binds `plotly_hover` / `plotly_unhover` on the route map's graph div:
+  - on hover of a trip (a PM point *or* its line — lines carry `hoverinfo="name"`,
+    so hovering *close* to a route triggers it), set the map cursor to **pointer**;
+    on unhover, revert. So the pointer shows only over a trip, not across the
+    whole map.
+  - on hover, **highlight the whole trip**: `Plotly.restyle` thickens that route's
+    line (width 5, opacity 1) and dims the others (opacity 0.25); unhover restores
+    width 1.6 / opacity 0.9. A `MutationObserver` re-binds across reruns.
+  - Cursor toggling is self-contained; the line highlight is best-effort (needs
+    the page's global `Plotly`) and degrades silently if unavailable.
+- `uv run pytest` → 28 passed.
+
+## 51. Route hover effect: reveal a polygon (convex hull) around the trip
+
+> can you make the hovering effect for the routes that it creates a polygon as the area that encapsulates the route
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** — added a scipy-free `_convex_hull` (Andrew's
+  monotone chain). When `route_map(clickable=True)`, it now emits one **hidden**
+  filled-polygon trace per trip — the convex hull of that trip's points — tagged
+  `meta="hull<route_id>"` (subtle vermillion fill, `visible=False`).
+- **`app_pages/dashboard.py`** — the hover watcher no longer thickens the route
+  line; instead it **reveals the hovered trip's hull polygon** (`Plotly.restyle`
+  the matching `hull<id>` trace to `visible=true`, all others false) and hides it
+  again on unhover. Pointer-cursor-only-on-hover is unchanged. Hovering a PM point
+  (customdata route_id) or near the route line (curve number) both resolve the
+  trip; hull traces use `hoverinfo="skip"` so they don't interfere.
+- Verified: hull drops interior points; `route_map(clickable=True)` builds 28
+  hidden hull traces for the mobile device. `uv run pytest` → 28 passed.
+
+## 52. Dashboard route map shows routes (paths), detail shows datapoints
+
+> and make it so that on the dashboard the routes are actually routes and not datapoints. when clicking a route it shows the more detailed version of the route with all datapoints
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** (`route_map`) — added `show_points: bool = True`.
+  - `show_points=False` (Dashboard): each trip renders as a **path**
+    (`lines+markers`, small same-colour nodes) and the **PM-coloured Viridis
+    datapoint scatter is omitted**. Each route trace carries `route_id` as the
+    last `customdata` field for click/hover resolution; clickable adds the hover
+    hint.
+  - `show_points=True` (Route detail, default): unchanged — the full PM-coloured
+    datapoint markers are drawn.
+- **`app_pages/dashboard.py`** — the Dashboard route map and the "Full map"
+  overlay now call `route_map(..., show_points=False)`; the detail page
+  (`route.py`) keeps the default, so clicking a route opens the detailed version
+  with all datapoints. Click handler now reads the **last** customdata field
+  (route node = `[route_id]`, PM marker = `[pm, route_id]`) and falls back to the
+  point's curve number (== route_id) then its coordinate. Caption → "click a
+  route to open it."
+- Verified: Dashboard map = 0 datapoint scatter traces, 28 route paths
+  (`lines+markers`, with customdata); detail map keeps the 1 PM-scatter trace.
+  `uv run pytest` → 28 passed.
+
+## 53. Route as one continuous line + fix hull-on-hover not showing
+
+> nah its still single points connected by lines instead of an actual route. i want it to be one object. also the hull is not visible
+
+**Diagnoses:**
+- The dashboard route used `mode="lines+markers"`, so it read as dots joined by
+  lines. → switched to **`mode="lines"`** (one continuous object).
+- The hull never showed because the hover JS captured `window.parent.Plotly`
+  **once** at iframe load — but Streamlit assigns `window.Plotly` only when the
+  chart's (lazy) chunk loads, which can be *after* the iframe runs, so it stayed
+  `undefined`. Also confirmed Streamlit drives selection via **`plotly_click`**,
+  which fires on line traces — so a markerless line is still clickable.
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** (`route_map`, `show_points=False`) — the trip is
+  now a single `mode="lines"` trace (no nodes), a touch thicker (width 2.6) for
+  easy hover/click; every vertex still carries `route_id` as the last customdata
+  field. `fill="toself"` confirmed supported on `go.Scattermap` (plotly 6.7).
+- **`app_pages/dashboard.py`** — the hover watcher now reads Plotly **fresh** in
+  each handler (`P()` helper) instead of caching it, so the hull-polygon
+  `restyle` works once the chunk is available. Cursor + click unchanged.
+- Verified: dashboard map traces are all `mode='lines'`; 28 route lines (with
+  customdata) + 28 hidden hull polygons. `uv run pytest` → 28 passed.
+
+## 54. Stable hull-on-hover (no flicker) + centroid tooltip
+
+> the hull is a bit weird, it lags a bit. also it refreshes every time you skip from one datapoint to the next on one single route. just dont make it like that. forget the hovering over single points. if you hover inside the hull make it visible and show the tooltip in the center of it -> dont re render the hull every single time you move your cursor inside the hull
+
+**Diagnosis:** the watcher restyled the hull on *every* `plotly_hover` event, so
+moving point-to-point along one trip re-rendered it (the lag/flicker). Also
+checked: `go.Scattermap` (MapLibre) does **not** support `hoveron`, so a polygon
+*interior* cannot be a hover target — only the route line/points fire hover.
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** (`route_map`, dashboard mode) — the per-trip hull
+  is now **always present but fully transparent** (`fillcolor` alpha 0,
+  `visible=True`, no outline) instead of a hidden trace; added a per-trip
+  **centroid text label** (`meta="label<id>"`, hidden) as the centre tooltip. The
+  route line carries `hoverinfo="none"` (no per-point tooltip).
+- **`app_pages/dashboard.py`** — rewrote the hover watcher so it restyles **only
+  when the hovered route changes** (`rid === lastRid` → no-op), tinting that
+  trip's hull (`fillcolor`) and showing its centroid label; un-hover is
+  **debounced 150 ms** so brushing across a gap doesn't flicker. Moving along one
+  trip no longer re-renders anything. Pointer cursor on hover unchanged.
+- Verified: 28 transparent hull traces + 28 hidden centroid labels; the hull
+  tint/label toggle is driven purely by route change. `uv run pytest` → 28 passed.
+
+## 55. Route map performance: collapse traces (86 → 3)
+
+> still lagging hard. is it possible to improve the performance?
+
+**Diagnosis:** the dashboard route map carried ~86 MapLibre traces (one line +
+one always-rendered transparent hull fill + one hidden label *per trip*, ×28).
+MapLibre re-renders every layer on any restyle and hit-tests every trace per
+mousemove, so both hovering and the per-hover `restyle` of 56 traces were slow.
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** —
+  - `route_map` (dashboard mode, many trips): the per-trip lines are collapsed
+    into **one** grey poly-line (`None`-separated segments) with `route_id` as
+    per-vertex customdata. ≤8 trips keep distinct coloured lines.
+  - The 28 hull + 28 label traces are replaced by **two reusable overlay traces**
+    (`meta="activehull"` / `"activelabel"`), empty until hovered.
+  - Added `route_hulls(routes)` → `{route_id: {lat, lon, clat, clon, text}}`.
+- **`app_pages/dashboard.py`** — the hover watcher injects `route_hulls` as JSON
+  and, on a *route change* only, **repoints the single active hull + label** to
+  the hovered trip (2 one-trace restyles) instead of restyling 56 traces. Cursor
+  + debounced clear unchanged.
+- Result: the dashboard route map for a 28-trip device went from **~86 traces to
+  3**; hover does 2 one-trace restyles. `uv run pytest` → 28 passed.
+
+## 56. Real (styled) tooltip for the route hover
+
+> also the tooltip that is displayed should actually look like a tooltip and not just blank text
+
+**Diagnosis:** the centroid label was a Scattermap `mode="text"` trace — drawn on
+the MapLibre *canvas*, so it was bare text with no box (and not CSS-stylable).
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** — removed the `activelabel` text trace; the
+  dashboard route map now adds only the `activehull` overlay (so it's 2 traces).
+- **`app_pages/dashboard.py`** — the hover watcher now creates a **styled HTML
+  tooltip div** (dark rounded box, shadow, white text, `pointer-events:none`)
+  appended over the map. On a route change it positions the tooltip at the trip
+  **centroid** via MapLibre's `map.project([lon, lat])` (fallback: map centre),
+  fills it with the trip label + a "Click to open" hint, and fades it in; it
+  fades out on un-hover. Still one `restyle` of the single hull trace per route
+  change — no perf regression.
+- Verified: dashboard route map is now **2 traces**. `uv run pytest` → 28 passed.
+
+## 57. Fix route-click routing to the wrong page
+
+> when i click a route it doesnt correcly route me to the right page
+
+**Diagnosis:** after collapsing the trips into one combined poly-line, the click
+handler's **curve-number fallback** broke — every trip now lives in trace index 0,
+and 0 is a valid route_id, so any click resolved to route 0. The 1-column
+customdata could also come back as a bare scalar the parser didn't handle, so it
+fell through to that fallback.
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** — the dashboard route lines (combined poly-line
+  and the ≤8 coloured lines) now carry **2-column** customdata `[route_id,
+  route_id]`, so a clicked point's customdata is reliably a list (route_id last),
+  never a bare scalar.
+- **`app_pages/dashboard.py`** — the click handler now: parses customdata as
+  list / dict / scalar; **removed the curve-number fallback** (meaningless with a
+  shared trace); falls back to a **tolerant** coordinate match (`abs diff < 1e-4`);
+  and only navigates when the resolved `rid` is an actual route_id.
+- Verified the combined line's customdata is `(N, 2)` with distinct route_ids 0–27.
+  `uv run pytest` → 28 passed.
+
+## 58. Fix route-map click navigation (for real) + distinct colours + hardcode gap
+
+> no it still doesnt work [route click] ... also for the second mobile sensor, the routes all have the same color. also remove the "Start a new trip when the gap exceeds" thing and hardcode it with 1 hour
+
+**Real diagnosis (via Playwright, installed as a dev dep):**
+1. Streamlit's plotly **selection only fires for marker/point clicks, never line
+   clicks** — captured `selection.points == []` on a line click. So a
+   markerless route can't be opened via `on_select`.
+2. The JS-navigation fallback I'd tried throws `SecurityError` — Streamlit's
+   `components.html` iframe is **sandboxed without top-navigation**, so it can
+   restyle the parent (hover works) but cannot set `window.parent.location`.
+3. The combined grey poly-line (perf change) also made every trip share trace
+   index 0, so colours collapsed to grey and clicks resolved to route 0.
+
+**Summary of changes:**
+
+- **`src/components/charts.py`** (`route_map`, dashboard mode) — reverted to **one
+  trace per trip** with **distinct cycling colours** (fixes the all-grey 2nd
+  sensor). Each trip is `lines+markers` with **same-colour markers** sitting on a
+  thick line, so it still reads as one continuous route but is *clickable*
+  (markers are what Streamlit's selection needs). 2-column `customdata`
+  (`[route_id, route_id]`). The `activehull` overlay is added **first** so it sits
+  *under* the lines (a tinted hull on top was swallowing the click).
+- **`app_pages/dashboard.py`** — click handling is back to **`on_select` →
+  `st.switch_page`** (server-side, no iframe limit); resolves route_id from the
+  marker's customdata with a signature guard. Removed the dead JS click-nav +
+  `ROUTE_BASE`. **Removed the gap select-slider; gap is hardcoded to 1 h.** Kept
+  the JS hover hull + HTML tooltip.
+- **Verified with Playwright:** clicking a route marker now opens the Route detail
+  page (3/3). `uv run pytest` → 28 passed.
+
+**Known limitation:** when a device's trips overlap on the same roads, their
+markers stack, so a click resolves to the topmost trip there (not necessarily the
+one visually intended) — inherent to overlapping GPS tracks.
+
+## 59. Fix route hover breaking after a time-range change
+
+> sometimes when changing the time duration the routes do not hover anymore
+
+**Diagnosis:** the hover watcher set `gd.__routeHover = true` and skipped if
+already set. On a rerun Streamlit often **reuses the same plotly graph div** (just
+updates its data), so the new run's watcher saw the flag, skipped re-binding, and
+the *old* hover listeners kept closing over **stale hull data** from the previous
+routes → hover stopped working (intermittently, depending on whether the div was
+reused).
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — the watcher now tracks the bound graph div in a
+  per-run local (`boundGd`) instead of a persistent flag, and on (re)bind it
+  **removes its previous `plotly_hover`/`plotly_unhover` listeners**
+  (`gd.removeAllListeners`) before re-attaching with the fresh `HULLS`. Safe
+  because Streamlit drives selection via `plotly_click`, not hover.
+- **Verified with Playwright:** hover tooltip works on load *and* still works
+  after switching the time range (All → 30 d). `uv run pytest` → 28 passed.
+
+## 60. Route detail: pick which measures to plot
+
+> on the route detail page i would like to be able to pick more values to show in the graph other than pm2.5
+
+**Summary of changes:**
+
+- **`app_pages/route.py`** — the trip chart is no longer hardcoded to PM2.5. Added
+  a **Measures** multiselect (options from `available_metrics(table)`, default
+  PM2.5) and load the device's time series over the trip's window
+  (`load_timeseries(table, chosen, t_start, t_end+1s, clean=True)`). Selected
+  measures are **grouped by unit**, and each unit gets its own `line_chart`
+  (honest data — different units never share a misleading y-axis); a hidden-
+  sentinel disclosure shows if any were cleaned. New imports: `available_metrics`,
+  `load_timeseries`, `get`, `hidden_notice`, `timedelta`.
+- **Verified with Playwright:** the route page shows the multiselect; adding a
+  different-unit measure adds a second chart (2 → 3 plotly charts). `uv run
+  pytest` → 28 passed.

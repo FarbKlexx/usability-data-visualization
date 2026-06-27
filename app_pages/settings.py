@@ -3,15 +3,9 @@
 Collapsed to the one admin surface a lay-facing dashboard needs (user
 direction A, 5Es: admin weighted last, Hick: fewer decisions):
 
-* **Thresholds** — the page's main content: named reference values that
-  the Time Series page draws as default reference lines.
-* **Saved views** *(expander)* — reopen a saved Time Series view exactly
-  as it was; a reversible capability (Shneiderman #6) kept, just demoted.
-
-The feature-flag toggles were removed: the three optional modules now
-render permanently (their flags default to *on*), so no capability was
-lost — only a decision the user no longer has to make. Every control is
-reversible (#6) and reports its result (#3 feedback).
+* **Thresholds** — named reference values, persisted to the database;
+  add and delete are reversible (Shneiderman #6) and report their result
+  (#3 feedback).
 """
 
 from __future__ import annotations
@@ -20,12 +14,10 @@ import streamlit as st
 
 from src.data import (
     dashboard_tables_ready,
-    load_saved_views,
     load_thresholds,
 )
 from src.db import (
     delete_threshold,
-    delete_view,
     save_threshold,
 )
 from src.utils.metrics import METRICS, get
@@ -44,11 +36,6 @@ if not dash_ready:
 
 # --- Persisted thresholds (the page's main content) ------------------------
 st.subheader(":material/horizontal_rule: Saved thresholds")
-st.page_link(
-    "app_pages/timeseries.py",
-    label="Used as reference lines in Time Series",
-    icon=":material/timeline:",
-)
 
 if not dash_ready:
     st.info("Run the migration to enable saved thresholds.", icon=":material/info:")
@@ -85,33 +72,3 @@ else:
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Could not save: {exc}", icon=":material/error:")
 
-st.divider()
-
-# --- Saved views (demoted into an expander) --------------------------------
-with st.expander(":material/bookmarks: Saved views", expanded=False):
-    st.caption("Reopen a saved Time Series view exactly as it was. Create views from the Time Series page.")
-    if not dash_ready:
-        st.info("Run the migration to enable saved views.", icon=":material/info:")
-    else:
-        views = load_saved_views()
-        if views.empty:
-            st.caption("No saved views yet — use 'Save this view' on the Time Series page.")
-        else:
-            for _, v in views.iterrows():
-                params = v["params_json"] or {}
-                measures = params.get("measures", [])
-                summary = (
-                    f"{params.get('table', '?')} · {', '.join(measures) or 'no measures'} · "
-                    f"{params.get('range', '?')} · {params.get('bucket', 'Auto')}"
-                )
-                nc, ac, dc = st.columns([0.6, 0.2, 0.2], vertical_alignment="center")
-                nc.markdown(f"**{escape_md(v['name'])}**  \n:gray-badge[{escape_md(summary)}]")
-                if ac.button("Apply", icon=":material/open_in_new:", key=f"apply_view_{v['id']}"):
-                    st.session_state["ts_sensors"] = params.get("table")
-                    st.session_state["ts_range"] = params.get("range", "30 d")
-                    st.session_state["ts_measures"] = list(measures)
-                    st.session_state["ts_bucket"] = params.get("bucket", "Auto")
-                    st.switch_page("app_pages/timeseries.py")
-                if dc.button("Delete", icon=":material/delete:", key=f"del_view_{v['id']}"):
-                    delete_view(int(v["id"]))
-                    st.rerun()

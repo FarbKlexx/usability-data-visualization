@@ -102,7 +102,7 @@ compatible interpreter on first `uv sync` if none is available.
 
 ```
 app.py              ── thin router: page_config + st.navigation + a cached DB-health guard
-app_pages/*.py      ── one module per page; UI only (dashboard [hub], timeseries, map, devices, settings). comparison.py is no longer a top-level page — it exposes render_compare(), mounted in the Dashboard's Compare tab.
+app_pages/*.py      ── one module per page; UI only (dashboard [hub], correlation, devices, settings + route [hidden drill-down]). correlation.py has its own corr single-sensor toolbar. route.py is a hidden page (visibility="hidden") opened from the Dashboard's mobile Routes list via st.switch_page(query_params=…); it reads the trip from the URL params. (Time Series, Compare and Map pages were removed; "Full map" on the Dashboard is now an @st.dialog map overlay.)
 src/
   components/       ── reusable UI primitives
     charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap). Line builders draw a gently spline-smoothed curve (`_SPLINE`, kept low so it doesn't invent peaks) with a fade-to-transparent vertical area gradient in the series colour (`_area_gradient`), but only for zero-based measures (fill-to-0 is meaningless for temp/pressure). Chart/map corners are rounded by CSS in app.py (`stPlotlyChart` border-radius + overflow:hidden).
@@ -155,14 +155,16 @@ Registered explicitly in `app.py`; each is read-only unless noted.
 
 | Page | Purpose | Write-back |
 |------|---------|-----------|
-| **Dashboard** *(adaptive cockpit)* | Fixed top-to-bottom hierarchy: **hero card** (the only `st.subheader`, *names the active device* + plain-language CAQI verdict + dominant-PM number) → **KPI strip** (the canonical 6-tile snapshot, lifted above the fold) → **`[2,1]` bento** (PM trend / route map *beside* a near-square location map / trip-stats card) → one divider → **tabs**: *Compare* (folded-in multi-sensor comparison), *Correlation* (verdict-first \|r\|), and *Routes* (mobile: split-gap + per-route PM). Operating hints are tooltips; only honesty disclosures stay as captions. | — |
-| **Time Series** | Deep single-sensor exploration: aggregation bucket, rolling avg, raw/clean toggle, thresholds, CSV, bookmarkable URL state. The annotation / raw-inspector / particle-drilldown modules now render **always** (no longer feature-gated). | annotations, reading flags, saved views |
-| **Map** | Locations + mobile tracks, layer toggles; details-on-demand = a single CAQI tile + "Open in Time Series" hand-off (the full KPI snapshot lives on the Dashboard, not duplicated here) | edit location (address + coords) |
+| **Dashboard** *(adaptive cockpit)* | Fixed top-to-bottom hierarchy: **hero card** (the only `st.subheader`, plain-language CAQI verdict above a red→green air-quality meter) → **KPI strip** (the headline measurement tiles, lifted above the fold) → **`[2,1]` bento** (PM trend / route map *beside* a near-square location map / trip-stats card; **"Full map"** opens a larger map in a modal overlay — `@st.dialog` — with the point/routes drawn, since there is no Map page) → **a per-device entry list**: for **stationary** sensors a lazy-loaded **Recent readings** table (newest-first, "Load more" grows the row count via `load_raw_readings(limit=…)`); for **mobile** sensors a **Routes** list (split-gap control + one clickable button per trip → the hidden **Route detail** page). Operating hints are tooltips; only honesty disclosures stay as captions. | — |
+| **Route detail** *(hidden)* | Drill-down for one mobile trip, opened from the Dashboard's Routes list (`st.switch_page` with `route_table`/`route_id`/`route_gap`/`route_start`/`route_end` query params). Mirrors the cockpit: verdict hero + meter → trip-stat KPI strip (points, duration, distance, mean/max PM2.5) → route map → PM2.5 over time. Not in the nav rail. | — |
+| **Correlation** | Single-sensor: do two measures move together? Verdict-first \|r\| badge then scatter/overlay (2 measures) or heatmap (3+). Own `corr` toolbar + bookmarkable URL state. | — |
 | **Devices & Data Quality** | Device catalog, coverage timeline, honest data-quality audit (known-issue detail in expanders) | edit device metadata |
-| **Settings** | Slim admin surface: persisted thresholds (used as Time Series reference lines) + a saved-views expander (apply/delete). *Feature-flag toggles removed — the optional modules are always on.* | thresholds, views |
+| **Settings** | Slim admin surface: persisted thresholds (add/delete). *Feature-flag toggles removed — the optional modules are always on.* | thresholds |
 
-Comparison is no longer a page: `app_pages/comparison.py` exposes
-`render_compare()`, mounted in the Dashboard's **Compare** tab.
+The **Time Series**, **Compare** and **Map** pages were removed. "Full
+map" on the Dashboard now opens the map in a modal overlay rather than a
+Map page; **Correlation** remains its own top-level page (own `corr`
+single-sensor toolbar).
 
 ### Navigation
 
@@ -177,15 +179,17 @@ menu** (the sidebar's own collapse button, which is a real two-way toggle
 once it's clickable) and **morphs ☰→✕** when opened; Streamlit's top-bar
 expand button is removed, so there's exactly one control. On phones (<768px) the rail CSS doesn't apply
 and Streamlit's off-canvas burger behaviour is kept. `PAGES` is a
-**dict of two labelled sections** — *Monitor & Analyse* (Dashboard, Time
-Series, Map) and *Reference & Settings* (Devices & Data Quality,
+**dict of two labelled sections** — *Monitor & Analyse* (Dashboard,
+Correlation) and *Reference & Settings* (Devices & Data Quality,
 Settings); these render as **static category eyebrows** above each group
 (the collapsible-dropdown chevron is hidden and the header made
 non-interactive — the pages are never hidden), so the menu reads as two
 sense-clusters rather than a flat list (Hick/Miller at the menu level).
 Each `st.Page` carries a Material Symbols icon (`:material/dashboard:`,
-`timeline`, `map`, `sensors`, `tune`) — these are the rail glyphs, so a
-new page **must** pass a sensible `icon=` or the rail shows a blank slot.
+`scatter_plot`, `sensors`, `tune`) — these are the rail glyphs, so a new
+page **must** pass a sensible `icon=` or the rail shows a blank slot. The
+hidden **Route detail** page (`visibility="hidden"`) carries `route` but
+is not shown in the rail.
 The pages directory is named **`app_pages/`, not `pages/`**, on purpose —
 `pages/` would trigger Streamlit's legacy auto-discovery and
 double-register every page.
@@ -264,7 +268,7 @@ Streamlit gives no config hook for, all verified theme-safe in light
    instant, so a skeleton only shows during a genuine fetch. The shapes
    mirror the real widgets (tile-shaped for a tile, chart-shaped for a
    chart) so the layout never jumps. Currently wired across the **Dashboard**
-   (hero, KPI strip, bento, Correlation tab) and its **Compare** tab.
+   (hero, KPI strip, bento) and the **Correlation** page.
 3. **Persistent navigation rail** (CSS in `app.py`, scoped to
    `@media (min-width:768px)`): repurposes the sidebar's two native states
    keyed on `section[data-testid="stSidebar"][aria-expanded]`. **Collapsed →

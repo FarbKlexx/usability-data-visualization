@@ -359,12 +359,64 @@ def build_location_markers(loc: pd.DataFrame, band_lookup: dict | None = None) -
     return pd.DataFrame(rows)
 
 
+def _convex_hull(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Convex hull of 2-D points (Andrew's monotone chain; scipy-free).
+
+    Returns the hull vertices in order (counter-clockwise), or the points
+    themselves if there are fewer than three distinct ones.
+    """
+    pts = sorted(set(points))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o: tuple, a: tuple, b: tuple) -> float:
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: list[tuple[float, float]] = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper: list[tuple[float, float]] = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def route_hulls(routes: pd.DataFrame) -> dict[int, dict]:
+    """Per-trip convex-hull ring + centroid + label, keyed by ``route_id``.
+
+    ``{rid: {"lat": [...], "lon": [...], "clat", "clon", "text"}}``. The
+    Dashboard injects this into its hover watcher so a *single* reusable polygon
+    + label trace can be repointed to the hovered trip — far lighter than one
+    trace per trip. Trips with fewer than three distinct points are skipped.
+    """
+    out: dict[int, dict] = {}
+    for i, rid in enumerate(dict.fromkeys(routes["route_id"])):
+        seg = routes[routes["route_id"] == rid]
+        hull = _convex_hull(list(zip(seg["lon"], seg["lat"], strict=False)))
+        if len(hull) < 3:
+            continue
+        out[int(rid)] = {
+            "lat": [p[1] for p in hull] + [hull[0][1]],
+            "lon": [p[0] for p in hull] + [hull[0][0]],
+            "clat": sum(p[1] for p in hull) / len(hull),
+            "clon": sum(p[0] for p in hull) / len(hull),
+            "text": f"Route {i + 1} · {len(seg)} pts",
+        }
+    return out
+
+
 def route_map(
     routes: pd.DataFrame,
     *,
     height: int = 560,
     selected_route: int | None = None,
     color_metric: str = "pm2_5",
+    clickable: bool = False,
+    show_points: bool = True,
 ) -> go.Figure:
     """Mobile routes on a map (adaptive plan §B2).
 
@@ -395,23 +447,55 @@ def route_map(
     lats: list[float] = []
     lons: list[float] = []
 
+    # Hover overlay added FIRST so it sits *under* the route lines: a tinted hull
+    # on top would intercept the click (it's hoverinfo="skip") and the line below
+    # would never receive it. The Dashboard's watcher repoints this `activehull`
+    # to the hovered trip; it's empty until then.
+    if clickable:
+        fig.add_trace(go.Scattermap(
+            lat=[], lon=[], mode="lines", fill="toself",
+            fillcolor="rgba(213, 94, 0, 0)", line=dict(width=0),
+            hoverinfo="skip", showlegend=False, visible=True, name="activehull", meta="activehull",
+        ))
+
+    # One trace per trip (each its own path) — needed for distinct per-route
+    # colours. On the dashboard every trip gets a cycling palette colour (not grey)
+    # so adjacent trips are distinguishable even when there are many; the legend is
+    # only shown for ≤8 (a 28-trip legend would defeat Hick). Each trip's line
+    # carries route_id as 2-column customdata (last field) so a click/hover resolves
+    # the trip — and because there is one trace per trip, the trace index is also
+    # the route_id.
     for i, rid in enumerate(route_ids):
         seg = routes[routes["route_id"] == rid]
         lats += list(seg["lat"]); lons += list(seg["lon"])
         is_sel = selected_route == rid
         dim = selected_route is not None and not is_sel
-        fig.add_trace(
-            go.Scattermap(
-                lat=seg["lat"], lon=seg["lon"], mode="lines",
-                line=dict(width=3 if is_sel else 1.6,
-                          color=(OKABE_ITO[6] if is_sel else (track_palette(i) if legend else "#8A8F98"))),
-                opacity=0.25 if dim else 0.9,
-                name=f"Route {i + 1}", hoverinfo="name", showlegend=legend,
-            )
+        if show_points:
+            color = OKABE_ITO[6] if is_sel else (track_palette(i) if legend else "#8A8F98")
+        else:
+            color = OKABE_ITO[6] if is_sel else track_palette(i)  # always distinct
+        trace_kwargs: dict = dict(
+            lat=seg["lat"], lon=seg["lon"],
+            line=dict(width=3 if is_sel else 1.6, color=color),
+            opacity=0.25 if dim else 0.9,
+            name=f"Route {i + 1}", showlegend=legend,
         )
+        if show_points:
+            trace_kwargs.update(mode="lines", hoverinfo="name")
+        else:
+            # Thick line + same-colour markers of the same size sitting *on* the
+            # line, so it still reads as one continuous route (no separate dots) —
+            # but the markers are what makes it clickable: Streamlit's plotly
+            # selection only fires for marker/point clicks, never line clicks.
+            trace_kwargs["line"] = dict(width=4 if is_sel else 3, color=color)
+            trace_kwargs.update(
+                mode="lines+markers", marker=dict(size=4, color=color),
+                customdata=[[int(rid), int(rid)]] * len(seg), hoverinfo="none",
+            )
+        fig.add_trace(go.Scattermap(**trace_kwargs))
 
     pts = routes if selected_route is None else routes[routes["route_id"] == selected_route]
-    if metric is not None and color_metric in pts.columns and pts[color_metric].notna().any():
+    if show_points and metric is not None and color_metric in pts.columns and pts[color_metric].notna().any():
         fig.add_trace(
             go.Scattermap(
                 lat=pts["lat"], lon=pts["lon"], mode="markers",
@@ -419,8 +503,14 @@ def route_map(
                     size=7, color=pts[color_metric], colorscale="Viridis", showscale=True,
                     colorbar=dict(title=f"{metric.short_label}<br>{metric.unit}"),
                 ),
-                customdata=pts[[color_metric]].to_numpy(),
-                hovertemplate=f"{metric.label}: %{{customdata[0]:.{metric.decimals}f}} {metric.unit}<extra></extra>",
+                # customdata[-1] = route_id, so a click on the map can resolve
+                # which trip the point belongs to (the Dashboard navigates on it).
+                customdata=pts[[color_metric, "route_id"]].to_numpy(),
+                hovertemplate=(
+                    f"{metric.label}: %{{customdata[0]:.{metric.decimals}f}} {metric.unit}"
+                    + ("<br><i>Click to open this trip →</i>" if clickable else "")
+                    + "<extra></extra>"
+                ),
                 name=metric.label, showlegend=False,
             )
         )

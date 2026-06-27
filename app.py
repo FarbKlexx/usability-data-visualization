@@ -40,14 +40,16 @@ PAGES = {
             default=True,
         ),
         st.Page(
-            "app_pages/timeseries.py",
-            title="Time Series",
-            icon=":material/timeline:",
+            "app_pages/correlation.py",
+            title="Correlation",
+            icon=":material/scatter_plot:",
         ),
+        # Drill-down from the Dashboard's mobile Routes list; not in the rail.
         st.Page(
-            "app_pages/map.py",
-            title="Map",
-            icon=":material/map:",
+            "app_pages/route.py",
+            title="Route detail",
+            icon=":material/route:",
+            visibility="hidden",
         ),
     ],
     "Reference & Settings": [
@@ -148,7 +150,8 @@ st.html(
     [data-testid="stForm"],
     [class*="st-key-box_"],
     .st-key-ts_bar,
-    .st-key-cmp_bar {
+    .st-key-cmp_bar,
+    .st-key-corr_bar {
         background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
         border-color: transparent;
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04),
@@ -166,7 +169,8 @@ st.html(
        which the select uses) — same rem unit, so they match at any root size. */
     .st-key-ov_bar [data-testid^="stBaseButton-segmented_control"],
     .st-key-ts_bar [data-testid^="stBaseButton-segmented_control"],
-    .st-key-cmp_bar [data-testid^="stBaseButton-segmented_control"] {
+    .st-key-cmp_bar [data-testid^="stBaseButton-segmented_control"],
+    .st-key-corr_bar [data-testid^="stBaseButton-segmented_control"] {
         min-height: 2.5rem;
     }
 
