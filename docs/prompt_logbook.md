@@ -1720,3 +1720,31 @@ reused).
   the PM chart shows **8 labelled band lines at 30 d** (both pollutants, 6 labels
   after collision-avoidance) and **5 at 7 d**, colour+dash coded. `uv run pytest`
   → 30 passed.
+
+## 66. Change the app font to Google Sans (Google Fonts API)
+
+> Change the used font in this app to Google Sans using the google font api
+
+**Summary of changes:**
+
+- **`.streamlit/config.toml`** — set the base UI font to **Google Sans** the
+  config-native way (no HTML injection, per CLAUDE.md):
+  - `font = "Google Sans, sans-serif"` in `[theme]`.
+  - Two `[[theme.fontFaces]]` tables loading Google Sans from the **Google Fonts
+    API** (`fonts.gstatic.com/s/googlesans/v69/…`). Google Sans ships as one
+    *variable* woff2 per Unicode subset (weight axis), so one face per subset
+    (latin + latin-ext) with `weight = "400 700"` covers regular/medium/the 600
+    heading weight. `unicodeRange`s copied from the official css2 output — latin
+    covers µ/°/–/↑↓, latin-ext covers ń (e.g. "Gdańsk"); the ↔ arrow falls back
+    to system sans-serif.
+- **`CLAUDE.md`** — documented the Google Sans font + how to change it.
+- **Note on the earlier typography inventory:** it claimed "Google Sans" was not
+  on the public Google Fonts API — that was **wrong**. `css2?family=Google+Sans`
+  returns 200 with a real variable font (family `'Google Sans'`, weights
+  400/500/700, gstatic v69). Verified by fetching the API directly.
+- **Verified with Playwright** (Streamlit restarted; config parsed with no
+  fontFaces warnings): `document.fonts` registers **`Google Sans @400 700`**, and
+  `document.fonts.check` is **true at 400, 600 and 700** (true weights, no faux-
+  bold); computed `font-family` on body / title / hero / KPI value all start with
+  **`"Google Sans"`**. Screenshot confirms the new letterforms; all glyphs
+  (µg/m³, °C) render. `uv run pytest` → 30 passed.

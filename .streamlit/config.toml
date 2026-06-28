@@ -21,6 +21,12 @@ linkUnderline = false
 baseFontSize = 15
 headingFontWeights = [600, 600, 600, 500, 500, 500]
 
+# Base UI font: Google Sans, served from the Google Fonts API via the
+# [[theme.fontFaces]] tables at the bottom of this file (one variable woff2 per
+# subset, weight axis 400–700). System sans-serif is the fallback for glyphs
+# outside the latin / latin-ext subsets (e.g. the ↔ arrow).
+font = "Google Sans, sans-serif"
+
 # Categorical chart palette — colorblind-safe (Okabe & Ito).
 chartCategoricalColors = [
     "#0072B2",
@@ -61,3 +67,24 @@ secondaryBackgroundColor = "#161B22"
 textColor = "#E6EDF3"
 linkColor = "#56B4E9"
 borderColor = "#30363D"
+
+# --- Google Sans webfont (Google Fonts API) --------------------------------
+# Google Sans ships as a single variable woff2 per Unicode subset (weight axis
+# 400–700), so one face per subset with a weight range covers regular (400),
+# medium (500) and the 600 heading weight. URLs + unicode-ranges are taken from
+# https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700 (gstatic
+# v69). latin covers µ/°/–/↑↓; latin-ext covers ń (e.g. "Gdańsk"). Loaded by the
+# browser straight from gstatic — works locally and on Streamlit Community Cloud.
+[[theme.fontFaces]]
+family = "Google Sans"
+url = "https://fonts.gstatic.com/s/googlesans/v69/4UasrENHsxJlGDuGo1OIlJfC6l_24rlCK1Yo_Iqcsih3SAyH6cAwhX9RPjIUvbQoi-E.woff2"
+weight = "400 700"
+style = "normal"
+unicodeRange = "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD"
+
+[[theme.fontFaces]]
+family = "Google Sans"
+url = "https://fonts.gstatic.com/s/googlesans/v69/4UasrENHsxJlGDuGo1OIlJfC6l_24rlCK1Yo_Iqcsih3SAyH6cAwhX9RPjwUvbQoi-Entw.woff2"
+weight = "400 700"
+style = "normal"
+unicodeRange = "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"

@@ -209,6 +209,14 @@ use `st.markdown(..., unsafe_allow_html=True)` or `st.html()` with
 `<style>` blocks** — it bypasses the design system and breaks dark
 mode. If a color or radius needs to change, change it in the config.
 
+The **base UI font is Google Sans** (`font = "Google Sans, sans-serif"`),
+loaded from the Google Fonts API via two `[[theme.fontFaces]]` tables (one
+variable woff2 per Unicode subset — latin + latin-ext — weight axis 400–700,
+covering the 400/500/600 weights the app uses). This is the config-native font
+mechanism (no HTML `<link>` injection); the gstatic URLs are pinned at v69. To
+change the font, edit those tables + the `font` token — never inject a webfont
+via `st.html`.
+
 **The documented exceptions:** a small `st.html(<style>)` in `app.py`
 plus one tiny JS scroll-watcher (a `components.html` block at the end of
 `app.py` — global, so it runs on every page; see the note at the bottom
