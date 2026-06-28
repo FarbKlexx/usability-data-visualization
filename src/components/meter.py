@@ -21,15 +21,41 @@ from __future__ import annotations
 import streamlit as st
 
 
-def air_quality_meter(position: float, dot_color: str) -> None:
+def air_quality_meter(
+    position: float,
+    dot_color: str,
+    ticks: tuple[float, ...] = (0.25, 0.5, 0.75),
+    zone_labels: tuple[tuple[float, str], ...] = (),
+) -> None:
     """Render the meter. ``position`` is 0 (worst, red/left) .. 1 (best, green/right).
 
     ``dot_color`` fills the marker (the CAQI band colour) inside a white ring so
-    it stays legible at any point along the gradient.
+    it stays legible at any point along the gradient. ``ticks`` are fractional
+    positions (0..1) for subtle, neutral band-boundary marks — by default the
+    three interior CAQI band boundaries (the bar's quarter points), so the scale
+    shows *where the air-quality thresholds sit*, not just where this reading is.
+    ``zone_labels`` are ``(centre 0..1, word)`` pairs printed in small grey above
+    the bar to name each zone (e.g. Good … Poor), so the scale reads without a
+    legend. Pass ``ticks=()`` / ``zone_labels=()`` to omit either.
     """
     pct = max(0.0, min(1.0, position)) * 100.0
+    marks = "".join(
+        f"<div class='aq-meter-tick' style='left:{max(0.0, min(1.0, t)) * 100:.1f}%'></div>"
+        for t in ticks
+    )
+    labels = ""
+    if zone_labels:
+        spans = "".join(
+            f"<span class='aq-meter-zone' style='left:{max(0.0, min(1.0, c)) * 100:.1f}%'>{txt}</span>"
+            for c, txt in zone_labels
+        )
+        labels = f"<div class='aq-meter-labels'>{spans}</div>"
     st.html(
-        "<div class='aq-meter'>"
-        f"<div class='aq-meter-dot' style='left:{pct:.1f}%;background:{dot_color}'></div>"
-        "</div>"
+        "<div class='aq-meter-wrap'>"
+        + labels
+        + "<div class='aq-meter'>"
+        + marks
+        + f"<div class='aq-meter-dot' style='left:{pct:.1f}%;background:{dot_color}'></div>"
+        + "</div>"
+        + "</div>"
     )

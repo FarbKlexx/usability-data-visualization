@@ -40,7 +40,7 @@ from src.data import (
     load_routes,
     load_timeseries,
 )
-from src.utils.aqi import caqi_band, caqi_index
+from src.utils.aqi import caqi_band, caqi_index, caqi_meter_zones, caqi_pm_thresholds
 from src.utils.clean import clean_frame, hidden_notice
 from src.utils.metrics import HEADLINE_KPIS, get
 from src.utils.state import publish_query_params, seed_session_defaults
@@ -49,6 +49,20 @@ _PLOT = {"theme": "streamlit", "width": "stretch", "config": {"displaylogo": Fal
 _MAP_PLOT = {"theme": "streamlit", "width": "stretch", "config": {"scrollZoom": True, "displaylogo": False}}
 # Operating hints that used to be standing captions — now tooltips (no prose).
 _ZOOM_HELP = "Drag to zoom · double-click to reset · click a legend entry to toggle a series."
+_PM_HELP = (
+    _ZOOM_HELP
+    + " Faint lines mark the CAQI air-quality bands (Low · Medium · High · Very high):"
+    + " dotted = PM2.5 (15/30/55/110), dashed = PM10 (25/50/90/180 µg/m³)."
+)
+# Per-pollutant CAQI band guides for the PM chart: PM2.5 dotted in its colour,
+# PM10 dashed in its colour — so colour + dash + the label all distinguish them.
+_PM_BAND_GUIDES = [
+    {"y": v, "label": f"PM2.5 · {b}", "color": get("pm2_5").color, "dash": "dot"}
+    for v, b in caqi_pm_thresholds("pm2_5")
+] + [
+    {"y": v, "label": f"PM10 · {b}", "color": get("pm10_0").color, "dash": "dash"}
+    for v, b in caqi_pm_thresholds("pm10_0")
+]
 _ROUTEMAP_HELP = "Drag to pan · scroll to zoom · points coloured by PM2.5 (Viridis) · pick a trip in the Routes section below."
 
 
@@ -152,7 +166,7 @@ with hero_ph.container(border=True, key="box_hero"):
         idx = caqi_index(vals.get("pm2_5", (None,))[0], vals.get("pm10_0", (None,))[0])
         if idx is not None:
             # idx: 0 cleanest .. 100 worst → marker position 1 (green/right) .. 0 (red/left).
-            air_quality_meter(1.0 - min(idx, 100.0) / 100.0, band.color)
+            air_quality_meter(1.0 - min(idx, 100.0) / 100.0, band.color, zone_labels=caqi_meter_zones())
 
 # Equal-width tiles: st.columns splits the row evenly, so every KPI card is the
 # same width (a horizontal container would size each to its own content).
@@ -261,7 +275,13 @@ if is_mobile:
 else:
     with cL:
         with st.container(border=True, key="box_pmtrend"):
-            st.markdown("**:material/timeline: Particulate matter over time**", help=_ZOOM_HELP)
+            pm_title, pm_action = st.columns([1, 1], vertical_alignment="center")
+            pm_title.markdown("**:material/timeline: Particulate matter over time**", help=_PM_HELP)
+            with pm_action.container(horizontal=True, horizontal_alignment="right"):
+                open_corr = st.button(
+                    "Correlate", icon=":material/scatter_plot:", key="ov_corr_link",
+                    help="Open the Correlation page for this sensor — see how PM relates to its other measures.",
+                )
             pmtrend_ph = st.empty()
             with pmtrend_ph.container():
                 skeleton.block(320)
@@ -274,10 +294,27 @@ else:
             locmap_ph = st.empty()
             with locmap_ph.container():
                 skeleton.block(320)
+    # "Correlate" hands off to the Correlation page focused on this sensor +
+    # window. Its picker only *seeds* from the URL when its key is unset, so set
+    # the corr session keys directly (a return visitor would otherwise keep their
+    # old sensor) and mirror them into the URL for a correct shareable link.
+    if open_corr:
+        st.session_state["corr_sensors"] = table
+        st.session_state["corr_range"] = fs.range_key
+        st.switch_page(
+            "app_pages/correlation.py",
+            query_params={"corr_sensors": table, "corr_range": fs.range_key},
+        )
     # Both skeletons painted; load each cell and swap it in.
     ts_df, ts_hidden, _ = load_timeseries(table, ("pm2_5", "pm10_0"), fs.start, fs.end)
     with pmtrend_ph.container():
-        st.plotly_chart(charts.line_chart(ts_df, ("pm2_5", "pm10_0"), height=320), **_PLOT)
+        st.plotly_chart(
+            charts.line_chart(
+                ts_df, ("pm2_5", "pm10_0"), height=320,
+                band_guides=_PM_BAND_GUIDES,
+            ),
+            **_PLOT,
+        )
         if (notice := hidden_notice(ts_hidden)):
             st.caption(f":material/visibility_off: {notice}")
     loc_one = load_locations()
@@ -367,7 +404,12 @@ else:
                 )
             if "air_quality" in disp.columns:
                 col_cfg["air_quality"] = st.column_config.TextColumn("Air quality", help="Computed CAQI band.")
-            st.dataframe(disp, hide_index=True, width="stretch", column_config=col_cfg)
+            # Size the table to fit every loaded row, so "Load more" grows the
+            # page itself instead of scrolling inside a fixed-height box
+            # (Streamlit otherwise caps the auto height at ~10 rows). 35px per
+            # row + the header row, + a few px so no inner scrollbar appears.
+            table_h = (len(disp) + 1) * 35 + 3
+            st.dataframe(disp, hide_index=True, width="stretch", height=table_h, column_config=col_cfg)
             st.caption(f":material/list_alt: Showing the {len(raw):,} most recent readings.")
             if len(raw) == n_show:  # a full page came back → there are probably more
                 if st.button("Load more", icon=":material/expand_more:", key="ov_points_more"):

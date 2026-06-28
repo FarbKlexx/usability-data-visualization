@@ -231,6 +231,37 @@ st.html(
         border: 3px solid #ffffff;
         box-shadow: 0 1px 3px rgba(16, 24, 40, 0.45);
     }
+    /* Subtle neutral band-boundary ticks (the CAQI thresholds): quiet grey
+       notches so the scale shows the air-quality cut-offs without competing with
+       the dot. The bar's gradient is theme-independent, so the tick colour is too
+       (no light-dark needed). The dot is appended after the ticks, so it always
+       paints on top. */
+    .aq-meter-tick {
+        position: absolute;
+        top: -2px;
+        bottom: -2px;
+        width: 2px;
+        transform: translateX(-50%);
+        background: rgba(55, 60, 65, 0.40);
+        border-radius: 1px;
+        pointer-events: none;
+    }
+    /* Zone names above the bar (Good … Poor), so the scale reads without a
+       legend. They sit on the card (not the gradient), so theme-aware grey;
+       small + muted to stay subordinate to the verdict word and the dot. */
+    .aq-meter-labels {
+        position: relative;
+        height: 1rem;
+        margin-bottom: 5px;
+        font-size: 0.7rem;
+        line-height: 1rem;
+    }
+    .aq-meter-zone {
+        position: absolute;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        color: light-dark(rgba(60, 66, 72, 0.80), rgba(214, 221, 228, 0.78));
+    }
 
     /* Streamlit's fixed top bar is transparent by default, so it shows the
        off-white canvas through it. Fill it to match the cards (white in light,

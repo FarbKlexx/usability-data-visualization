@@ -273,6 +273,32 @@ def test_caqi_bands_carry_plain_language() -> None:
     assert all(b.advice.strip() for b in CAQI_BANDS)
 
 
+def test_caqi_pm_thresholds_match_the_bands() -> None:
+    # The chart's band-guide lines must be the same breakpoints the band
+    # classification uses, each labelled with the band you enter above it.
+    from src.utils.aqi import caqi_band, caqi_pm_thresholds
+
+    pm25 = caqi_pm_thresholds("pm2_5")
+    assert pm25 == [(15.0, "Low"), (30.0, "Medium"), (55.0, "High"), (110.0, "Very high")]
+    # PM10 uses its own (higher) grid.
+    assert caqi_pm_thresholds("pm10_0")[0] == (25.0, "Low")
+    # A value just above each PM2.5 boundary classifies into the labelled band.
+    for value, label in pm25:
+        band = caqi_band(pm2_5=value + 0.1)
+        assert band is not None and band.label == label
+
+
+def test_caqi_meter_zones_label_each_quarter() -> None:
+    # The meter names its four visible zones best→worst with the quality words,
+    # at the quarter centres (positions in (0, 1)).
+    from src.utils.aqi import caqi_meter_zones
+
+    zones = caqi_meter_zones()
+    assert [w for _, w in zones] == ["Good", "Fair", "Moderate", "Poor"]
+    assert [round(p, 3) for p, _ in zones] == [0.875, 0.625, 0.375, 0.125]
+    assert all(0.0 < p < 1.0 for p, _ in zones)
+
+
 # --- DB-gated integration ---------------------------------------------------
 
 

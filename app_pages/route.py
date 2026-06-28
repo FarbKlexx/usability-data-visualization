@@ -21,7 +21,7 @@ from src.components import charts
 from src.components.filter_bar import device_label
 from src.components.meter import air_quality_meter
 from src.data import available_metrics, load_devices, load_routes, load_timeseries
-from src.utils.aqi import COMPUTED_NOTE, caqi_band, caqi_index
+from src.utils.aqi import COMPUTED_NOTE, caqi_band, caqi_index, caqi_meter_zones
 from src.utils.clean import hidden_notice
 from src.utils.metrics import get
 
@@ -96,7 +96,7 @@ with st.container(border=True, key="box_hero"):
     else:
         st.subheader(f"{band.icon} Air quality: {band.quality}", help=meta)
         if idx is not None:
-            air_quality_meter(1.0 - min(idx, 100.0) / 100.0, band.color)
+            air_quality_meter(1.0 - min(idx, 100.0) / 100.0, band.color, zone_labels=caqi_meter_zones())
 
 # === ZONE 2: KPI strip — the trip's headline numbers =========================
 with st.container(horizontal=True):

@@ -114,6 +114,39 @@ def caqi_index(pm2_5: float | None = None, pm10: float | None = None) -> float |
     return max(subs) if subs else None
 
 
+def caqi_pm_thresholds(pollutant: str = "pm2_5") -> list[tuple[float, str]]:
+    """Finite CAQI band-boundary concentrations (µg/m³) for a PM pollutant.
+
+    Each boundary is paired with the band you *enter* when you cross above it,
+    e.g. PM2.5 → ``[(15, "Low"), (30, "Medium"), (55, "High"), (110, "Very high")]``.
+    Used to draw subtle air-quality reference lines on a concentration chart
+    (the stepped form of the same grid the band classification uses).
+    """
+    attr = "pm10_hi" if pollutant in ("pm10_0", "pm10") else "pm2_5_hi"
+    out: list[tuple[float, str]] = []
+    for i, band in enumerate(CAQI_BANDS[:-1]):
+        hi = getattr(band, attr)
+        if math.isfinite(hi):
+            out.append((float(hi), CAQI_BANDS[i + 1].label))
+    return out
+
+
+def caqi_meter_zones() -> list[tuple[float, str]]:
+    """``(centre 0..1, plain-language quality word)`` for each visible meter zone.
+
+    The red→green meter spans CAQI index 0..100 (best → top of "High"); its three
+    interior ticks cut it into four zones whose centres get a word — right→left
+    Good · Fair · Moderate · Poor — matching the hero verdict. The fifth band,
+    "Very poor", is off this 0-100 scale (the worst edge), so it has no zone.
+    """
+    edges = (0.0, 25.0, 50.0, 75.0, 100.0)  # CAQI index band edges (worse-of grid)
+    zones: list[tuple[float, str]] = []
+    for i, band in enumerate(CAQI_BANDS[:4]):
+        centre_index = (edges[i] + edges[i + 1]) / 2.0
+        zones.append((1.0 - centre_index / 100.0, band.quality))
+    return zones
+
+
 def caqi_band(pm2_5: float | None = None, pm10: float | None = None) -> CAQIBand | None:
     """Classify a reading into a CAQI band (worse of PM2.5 / PM10).
 

@@ -1578,3 +1578,145 @@ reused).
 - **Verified with Playwright:** the route page shows the multiselect; adding a
   different-unit measure adds a second chart (2 → 3 plotly charts). `uv run
   pytest` → 28 passed.
+
+## 61. Correlation page: adopt the Dashboard's tile-card design
+
+> improve the design of the correlation page by adopting design choices from the main page. also the correlation should be inside a tile box like on the dashboard
+
+**Summary of changes:**
+
+- **`app_pages/correlation.py`** — reskinned the page to mirror the Dashboard
+  cockpit's visual language while keeping the same data flow:
+  - The verdict and the chart now each live in a **bordered `box_*` tile card**
+    (`box_corr_verdict` / `box_corr_chart`), so they pick up the hub's white-card
+    styling (`[class*="st-key-box_"]` in `app.py`) on the off-white canvas — the
+    "correlation inside a tile box like on the dashboard" ask.
+  - **Verdict hero** (mirrors the hub's hero): an icon+title header
+    (`:material/compare_arrows: Relationship`, hint in a tooltip) over a
+    `st.subheader` stating the strongest relationship in plain language, with
+    `r`/`n` as gray badges. For 3+ measures the **strongest |r| pair becomes the
+    focal hero** and the remaining pairs are listed beneath it (Mental Models:
+    single focal point), instead of a flat equal-rank list.
+  - **Chart tile** (mirrors a bento cell): icon+title header with the operating
+    hint in a tooltip, and the **Scatter/Overlay** toggle moved to the top-right
+    of the card (same placement as the hub's "Full map" action). Heatmap path for
+    3+ measures gets its own `:material/grid_on: Correlation matrix` header.
+  - **Skeleton-swap load**: both cards are painted as content-shaped skeletons
+    (`box_corr_*_skel`) before the paired-readings query, then swapped in — the
+    hub's no-layout-jump pattern. Standing prose trimmed to one orienting caption;
+    hints live in tooltips.
+- **`CLAUDE.md`** — noted the Correlation page now uses the hub's tile-card layout.
+- **Verified with Playwright** (app running locally): 2-measure view renders the
+  verdict tile ("No / weak link") + chart tile with the scatter; 3-measure view
+  elevates the strongest pair ("↑ Strong positive", PM2.5↔PM10 r=+0.82) and shows
+  the heatmap in its tile. `uv run pytest` → 28 passed; page compiles clean.
+
+## 62. Dashboard: "Correlate" link from the PM-trend graph
+
+> on the dashboard i want a button top right of the graph to link to the correlation page for the selected sensor on the dashboard
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — the stationary **Particulate matter over time**
+  card (`box_pmtrend`) now has a two-column header (title left, action right),
+  with a **"Correlate"** button (`:material/scatter_plot:`, `key="ov_corr_link"`)
+  top-right — same placement/pattern as the "Full map" button on the Location
+  card beside it.
+- Clicking it hands off to the **Correlation page focused on the current sensor +
+  time window**: it sets `st.session_state["corr_sensors"]`/`["corr_range"]`
+  directly, then `st.switch_page("app_pages/correlation.py", query_params={…})`.
+  Setting the session keys is required because the Correlation picker only
+  *seeds* from the URL when its key is unset — a return visitor would otherwise
+  keep their old sensor (this is the established `hand_off_to_*` pattern). The
+  query_params mirror keeps the URL a correct shareable link. The hand-off is
+  checked before the (cached) time-series load so we don't fetch then navigate.
+- Scoped to the **stationary** branch only (the mobile branch shows a route map,
+  not a PM-over-time graph).
+- **`CLAUDE.md`** — noted the PM-trend card's Correlate hand-off.
+- **Verified with Playwright** (3 scenarios): (1) button present, click →
+  `/correlation?corr_sensors=<B>&corr_range=…`; (2) **return-visitor override** —
+  seeded Correlation with sensor A, then Correlate from the dashboard on sensor B
+  switched to B (selectbox shows "SENSORpi s01"), proving the session-state set is
+  necessary and works; (3) mobile sensor shows no Correlate button. `uv run
+  pytest` → 28 passed.
+
+## 63. Dashboard: "Load more" grows the readings table onto the page
+
+> also the lazy loading for the data points is a bit weird because it just scrolls inside its box. i want the button load more to load them directly onto the page if you know what i mean
+
+**Summary of changes:**
+
+- **`app_pages/dashboard.py`** — the **Recent readings** `st.dataframe` (stationary
+  view) now gets an explicit `height` sized to fit every loaded row
+  (`(len(disp) + 1) * 35 + 3` — 35px/row + header), instead of Streamlit's
+  default auto-height that caps at ~10 rows and then **scrolls inside a
+  fixed-height box**. So "Load more" now extends the table (and the page itself)
+  downward — the rows render directly onto the page, scrolled with the browser,
+  not an inner scrollbar.
+- **Verified with Playwright** (stationary sensor, range All): after one "Load
+  more" the dataframe height grew by **exactly 875px** (= 25 rows × 35px), the
+  page `scrollHeight` grew ~859px, and the grid's inner scroller reported **no
+  internal scroll** before or after. `uv run pytest` → 28 passed; compiles clean.
+
+## 64. Dashboard: subtle CAQI thresholds on the AQ meter + PM graph
+
+> also, on the dashboard page the airquality thresholds should somehow be displayed in the "Air Quality: Good " bar and aswell in the graph, without overloading it. use very subtle neutral colors for this, maybe grey
+
+**Summary of changes:**
+
+- **`src/utils/aqi.py`** — new `caqi_pm_thresholds(pollutant)` returning the
+  finite CAQI band-boundary concentrations paired with the band entered above
+  each, e.g. PM2.5 → `[(15,"Low"),(30,"Medium"),(55,"High"),(110,"Very high")]`
+  (the stepped form of the grid the band classifier already uses).
+- **Meter (`src/components/meter.py` + `app.py` CSS)** — `air_quality_meter` now
+  draws subtle neutral **`.aq-meter-tick`** marks at the band boundaries (default
+  `ticks=(0.25, 0.5, 0.75)` — the three interior CAQI cut-offs / the bar's quarter
+  points), so the red→green bar shows *where* Good/Fair/Moderate/Poor sit, not
+  just the current dot. Quiet grey, theme-independent (the gradient is too); the
+  dot still paints on top. Applies on the Dashboard and Route-detail heroes.
+- **Graph (`src/components/charts.py`)** — `line_chart` gained a `band_guides`
+  param: faint grey dotted `add_hline` reference lines drawn *under* the series,
+  **filtered to the visible range** (guides ≤ data max, plus the nearest one
+  above unless it'd squash the series) so a far band never stretches the axis.
+  No on-chart labels (they clip in the 8px right margin and clutter) — the bands
+  are disclosed in the chart-title tooltip instead.
+- **`app_pages/dashboard.py`** — the stationary PM-trend chart passes
+  `band_guides=caqi_pm_thresholds("pm2_5")`; the card tooltip (`_PM_HELP`) now
+  states "Grey dotted lines mark the PM2.5 air-quality bands (CAQI): Low ≥15,
+  Medium ≥30, High ≥55, Very high ≥110 µg/m³."
+- **`tests/test_smoke.py`** — added `test_caqi_pm_thresholds_match_the_bands`
+  (asserts the guide breakpoints equal the classifier's bands).
+- **`CLAUDE.md`** — noted the meter ticks + PM band guides.
+- **Verified with Playwright**: meter shows **3 ticks**; the PM chart draws **4
+  band lines at 30 d** (peaks ~274) and **3 at 24 h** (the far "Very high" 110 is
+  correctly filtered out, axis caps ~55) — range-adaptive, no axis blow-up.
+  `uv run pytest` → 29 passed.
+
+## 65. Threshold labels: zone words on the meter + per-pollutant chart bands
+
+> they should also have a short description / title. in the bar above the thresholds it could be a little word like "Bad, Medium, Good" or whatever the threshold represents and for the graph we need the thresholds with a describtion to distinguish between pm2.5 and pm10 thresholds
+
+**Summary of changes:**
+
+- **Meter zone words** — `src/utils/aqi.py` adds `caqi_meter_zones()` →
+  `[(centre, word)]` for the four visible zones (Good · Fair · Moderate · Poor,
+  the CAQI quality words, matching the hero verdict; "Very poor" is off the 0-100
+  scale). `air_quality_meter` (`src/components/meter.py`) gained a `zone_labels`
+  param that prints them in small muted grey **above** the bar (new
+  `.aq-meter-labels`/`.aq-meter-zone` CSS in `app.py`, theme-aware since they sit
+  on the card, not the gradient). Wired on the Dashboard and Route-detail heroes.
+- **Per-pollutant chart bands** — `line_chart`'s `band_guides` is now a list of
+  `{"y", "label", "color", "dash"}` dicts. The Dashboard passes **both** PM2.5
+  and PM10 CAQI bands (`_PM_BAND_GUIDES`), distinguished three ways so it's never
+  colour-alone (colour-blind-safe): **colour** (PM2.5 orange / PM10 blue, matching
+  each series), **dash** (PM2.5 dotted / PM10 dashed), and a **label**
+  ("PM2.5 · High", "PM10 · Medium", …). Labels are **collision-avoided** (skipped
+  when too close to the previous one; the line still draws) and the whole set is
+  range-filtered (≤ data max + each pollutant's nearest band above), so wide
+  ranges show more and short ranges stay clean. `_PM_HELP` tooltip updated.
+- **`tests/test_smoke.py`** — `test_caqi_meter_zones_label_each_quarter`.
+- **`CLAUDE.md`** — updated the meter + band-guide notes.
+- **Verified with Playwright**: meter shows zone words **Good/Fair/Moderate/Poor**;
+  the PM chart shows **8 labelled band lines at 30 d** (both pollutants, 6 labels
+  after collision-avoidance) and **5 at 7 d**, colour+dash coded. `uv run pytest`
+  → 30 passed.

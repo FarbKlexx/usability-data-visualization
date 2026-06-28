@@ -75,6 +75,7 @@ def line_chart(
     smooth: pd.DataFrame | None = None,
     thresholds: dict[str, float] | None = None,
     annotations: list[dict] | None = None,
+    band_guides: list[dict] | None = None,
 ) -> go.Figure:
     """Multi-series time line. Click a legend entry to toggle a series.
 
@@ -93,6 +94,11 @@ def line_chart(
       channel — there is a labelled line + markers).
     * ``annotations`` — ``[{"ts_from", "ts_to", "label"}]`` shaded spans /
       vertical markers for saved notes.
+    * ``band_guides`` — ``[{"y", "label", "color", "dash"}]`` faint reference
+      lines (e.g. CAQI air-quality bands), drawn *under* the series. Filtered to
+      the visible range so a high band never stretches the axis; labels are
+      collision-avoided so they stay readable. Colour + dash + the label carry
+      the meaning (e.g. dotted PM2.5 vs dashed PM10), never colour alone.
     """
     present = [k for k in metric_keys if k in df.columns and df[k].notna().any()]
     if df.empty or not present:
@@ -148,6 +154,43 @@ def line_chart(
                         hovertemplate=_hovertemplate(metric), showlegend=False,
                     )
                 )
+
+    # Air-quality band guides (e.g. CAQI). Each guide is a dict
+    # {"y", "label", "color", "dash"}: faint coloured lines under the series,
+    # range-filtered so a far band never stretches the axis, with collision-
+    # avoided labels. Colour + dash + the label's pollutant prefix distinguish
+    # e.g. PM2.5 from PM10 (never colour alone — colour-blind-safe).
+    if band_guides:
+        present_max = max(
+            (float(df[k].max()) for k in present if df[k].notna().any()), default=None
+        )
+        if present_max is not None:
+            shown = [g for g in band_guides if g["y"] <= present_max]
+            # The nearest band above current levels, per colour (pollutant) group,
+            # so each series still shows its next threshold — unless it is so far
+            # above the data that drawing it would squash the series.
+            nearest_above: dict[str, dict] = {}
+            for g in sorted(band_guides, key=lambda d: d["y"]):
+                if g["y"] > present_max:
+                    nearest_above.setdefault(g["color"], g)
+            for g in nearest_above.values():
+                if present_max >= 0.4 * g["y"]:
+                    shown.append(g)
+            # Label only when far enough from the previous label to stay readable;
+            # unlabelled lines still draw (colour + dash carry the meaning).
+            sep = present_max * 0.05
+            last_label_y = float("-inf")
+            for g in sorted(shown, key=lambda d: d["y"]):
+                show_label = (g["y"] - last_label_y) >= sep
+                fig.add_hline(
+                    y=g["y"], layer="below",
+                    line=dict(color=_hex_to_rgba(g["color"], 0.38), width=1, dash=g.get("dash", "dot")),
+                    annotation_text=(g["label"] if show_label else None),
+                    annotation_position="top right",
+                    annotation_font=dict(size=10, color=_hex_to_rgba(g["color"], 0.95)),
+                )
+                if show_label:
+                    last_label_y = g["y"]
 
     units = {get(k).unit for k in present}
     y_title = next(iter(units)) if len(units) == 1 else "value"
