@@ -1748,3 +1748,71 @@ reused).
   bold); computed `font-family` on body / title / hero / KPI value all start with
   **`"Google Sans"`**. Screenshot confirms the new letterforms; all glyphs
   (µg/m³, °C) render. `uv run pytest` → 30 passed.
+
+## 67. Redesign the Devices & Data Quality page like the dashboard
+
+> do a redesign of the devices and data quality page like you did before in
+> reference to the styling of the dashboard page
+
+**Summary of changes:**
+
+- **`app_pages/devices.py`** — rebuilt the page to mirror the Dashboard cockpit
+  (the same tile-card language used in the Correlation redesign), replacing the
+  flat *4 metrics → divider → subheader → divider → …* stack:
+  - **Verdict hero** (`box_dev_hero`): an `st.subheader` "the dataset at a
+    glance" — total readings + active sensors — over coverage/span badges
+    (`{span} · {n} of {N} registered logging`). The badges deliberately carry
+    what the KPI strip does *not* (span + a coverage framing), not the raw
+    per-category counts, so it reads as an executive summary, not a repeat.
+  - **KPI strip**: the existing four counts (registered · with-data · no-table ·
+    external) kept as bordered `st.metric` tiles, lifted directly under the hero.
+  - **Content tile cards** (all bordered `box_*`, no more `st.divider()`s):
+    `box_coverage` (data-availability timeline), `box_catalog` (the device
+    dataframe), `box_quality` (saturation-sentinel table + the six known-issue
+    expanders), `box_edit` (the metadata form). Each has an
+    **`**:material/icon: Title**`** header with the operating hint moved into a
+    **tooltip**; only honest-data disclosures ("counted, never silently dropped")
+    stay on screen.
+  - **Skeleton-swap loading** (the hub's pattern): hero + strip are whole-swapped
+    from a content-shaped skeleton; the coverage/catalog/quality cards render
+    their box+title immediately and skeleton only the data area until the loader
+    resolves. The slow saturation-sentinel scan (`load_comparison` over every
+    air-quality table) now shows a skeleton instead of the old `st.spinner`.
+  - The edit **form is borderless** (`st.form(border=False)`) inside `box_edit`
+    so the card isn't doubled; the device picker stays *outside* the form (so a
+    new selection reloads the fields). All write-back logic is unchanged.
+- **`CLAUDE.md`** — updated the Devices & Data Quality row in the Pages table to
+  describe the cockpit-mirroring tile layout (`box_dev_hero` / `box_coverage` /
+  `box_catalog` / `box_quality` / `box_edit`).
+- **Verified with Playwright** (light + dark): no exceptions; all five `box_*`
+  cards present; hero reads "548,450 readings from 9 active sensors · May 2023 –
+  Dec 2025 · 6 of 40 registered logging"; the borderless edit form nests cleanly
+  (no double card); cards get the elevated dark surface via the existing
+  `light-dark()` CSS. `uv run pytest` → 30 passed.
+
+## 68. Remove the data-quality audit and edit sections from Devices
+
+> remove the  Known data-quality issues and  Edit device metadata section from
+> this page
+
+**Summary of changes:**
+
+- **`app_pages/devices.py`** — deleted the two trailing tile cards:
+  - **`box_quality`** ("Known data-quality issues" — the saturation-sentinel
+    table + the six known-issue expanders).
+  - **`box_edit`** ("Edit device metadata" — the device picker + write-back form).
+  - Removed everything they alone used: the `_ISSUES` constant, the
+    `from datetime import datetime` / `load_comparison` / `update_object` imports.
+    The page now stops after the Device catalog card (hero → KPI strip →
+    `box_coverage` → `box_catalog`).
+  - Refreshed the module docstring + page caption (no more "honest data audit" /
+    "quirks" framing) to match the slimmer catalog + coverage page.
+- The `update_object` write API and the saturation-sentinel loaders are **left in
+  `src/`** (unused by any page now), consistent with how the feature-flag helpers
+  were kept after the IA consolidation.
+- **`CLAUDE.md`** — updated the Devices row in the Pages table (cards now just
+  `box_coverage` + `box_catalog`; write-back column → "—") and the Deployment
+  write-back note (Settings is now the only page with a live edit surface).
+- **Verified with Playwright**: no exceptions; `box_quality` and `box_edit` are
+  gone; hero + KPI strip + coverage + catalog remain (4 metric tiles).
+  `uv run pytest` → 30 passed.

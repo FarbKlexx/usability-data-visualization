@@ -158,7 +158,7 @@ Registered explicitly in `app.py`; each is read-only unless noted.
 | **Dashboard** *(adaptive cockpit)* | Fixed top-to-bottom hierarchy: **hero card** (the only `st.subheader`, plain-language CAQI verdict above a red→green air-quality meter, which carries subtle grey ticks at the CAQI band boundaries + small zone words above the bar — Good · Fair · Moderate · Poor) → **KPI strip** (the headline measurement tiles, lifted above the fold) → **`[2,1]` bento** (PM trend [with faint per-pollutant CAQI band guide lines — PM2.5 dotted, PM10 dashed, labelled] / route map *beside* a near-square location map / trip-stats card; **"Full map"** opens a larger map in a modal overlay — `@st.dialog` — with the point/routes drawn, since there is no Map page; the stationary PM-trend card also carries a top-right **"Correlate"** button → the Correlation page focused on the current sensor + window) → **a per-device entry list**: for **stationary** sensors a lazy-loaded **Recent readings** table (newest-first, "Load more" grows the row count via `load_raw_readings(limit=…)`); for **mobile** sensors a **Routes** list (split-gap control + one clickable button per trip → the hidden **Route detail** page). Operating hints are tooltips; only honesty disclosures stay as captions. | — |
 | **Route detail** *(hidden)* | Drill-down for one mobile trip, opened from the Dashboard's Routes list (`st.switch_page` with `route_table`/`route_id`/`route_gap`/`route_start`/`route_end` query params). Mirrors the cockpit: verdict hero + meter → trip-stat KPI strip (points, duration, distance, mean/max PM2.5) → route map → PM2.5 over time. Not in the nav rail. | — |
 | **Correlation** | Single-sensor: do two measures move together? Verdict-first \|r\| badge then scatter/overlay (2 measures) or heatmap (3+). Own `corr` toolbar + bookmarkable URL state. **Mirrors the hub's tile-card layout**: a verdict **hero** card (`box_corr_verdict`, strongest \|r\| pair as the focal point) over a **chart tile** (`box_corr_chart`, scatter/overlay toggle top-right), both skeleton-swapped. | — |
-| **Devices & Data Quality** | Device catalog, coverage timeline, honest data-quality audit (known-issue detail in expanders) | edit device metadata |
+| **Devices & Data Quality** | Device catalog + data-availability timeline. **Mirrors the hub's cockpit layout**: a verdict **hero** card (`box_dev_hero`, the dataset at a glance — total readings / active sensors / record span / coverage) over a **KPI strip** (registered · with-data · no-table · external), then bordered `box_*` tile cards — `box_coverage` (data-availability timeline) and `box_catalog` (the device table). Icon+title headers with operating hints in tooltips; skeleton-swapped loads (the box+title render immediately, only the data area waits). *(The data-quality audit and the device-edit form were removed from this page; the `update_object` write API + the saturation-sentinel loaders remain in `src/` but no page calls them.)* | — |
 | **Settings** | Slim admin surface: persisted thresholds (add/delete). *Feature-flag toggles removed — the optional modules are always on.* | thresholds |
 
 The **Time Series**, **Compare** and **Map** pages were removed. "Full
@@ -462,8 +462,9 @@ To test a hosted DB locally, copy `.streamlit/secrets.toml.example` to
 `.streamlit/secrets.toml` (gitignored) with the same `DATABASE_URL`.
 Community Cloud auto-redeploys on push to the deployed branch; only
 **secret changes** require a manual reboot. Write-back features are
-live on a public deploy (the in-context edit forms on Map/Devices and
-the **Settings** thresholds/views). **Never commit a real connection
+live on a public deploy (the **Settings** thresholds/views; the
+`update_object` device-edit API still exists but is no longer surfaced
+on a page). **Never commit a real connection
 string**; rotate
 the DB password if one leaks.
 
