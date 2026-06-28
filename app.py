@@ -111,9 +111,9 @@ if db_error:
 st.html(
     """
     <style>
-    /* Dashboard filter bar (prefix "ov"): a full bordered card at rest that
-       sticks to the top and condenses into a slim top bar once you scroll
-       past it. Pure CSS, degrades gracefully.
+    /* Dashboard + Correlation filter bars (prefix "ov" / "corr"): a full
+       bordered card at rest that sticks to the top and condenses into a slim
+       top bar once you scroll past it. Pure CSS, degrades gracefully.
        Sticky is applied to the bar's *layout wrapper* (selected via :has),
        not the bar itself — the bar's own wrapper is exactly the bar's height
        so it has no room to stick, whereas its parent (the main vertical
@@ -121,12 +121,14 @@ st.html(
        (light-dark(); the bar is otherwise transparent and would bleed when
        stuck) live on the bar. No scroll-timeline support → stays full-size
        sticky; no :has support → not sticky but otherwise unchanged. */
-    [data-testid="stLayoutWrapper"]:has(> .st-key-ov_bar) {
+    [data-testid="stLayoutWrapper"]:has(> .st-key-ov_bar),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-corr_bar) {
         position: sticky;
         top: 3.5rem;  /* clear Streamlit's ~56px fixed header (it sits above) */
         z-index: 100;
     }
-    .st-key-ov_bar {
+    .st-key-ov_bar,
+    .st-key-corr_bar {
         width: 100%;
         background: light-dark(rgb(255, 255, 255), rgb(13, 17, 23));
         transition: width .18s ease, max-width .18s ease, margin-left .18s ease,
@@ -142,7 +144,8 @@ st.html(
        set inline by the watcher from the main content area's size, so it spans
        the main column and NOT the open sidebar (vw-based bleed would slide
        under it). */
-    .st-key-ov_bar.ov-stuck {
+    .st-key-ov_bar.ov-stuck,
+    .st-key-corr_bar.ov-stuck {
         padding-top: 6px;
         padding-bottom: 6px;
         border-radius: 0;
@@ -164,16 +167,17 @@ st.html(
     [data-testid="stForm"],
     [class*="st-key-box_"],
     .st-key-ts_bar,
-    .st-key-cmp_bar,
-    .st-key-corr_bar {
+    .st-key-cmp_bar {
         background-color: light-dark(rgb(255, 255, 255), rgb(28, 33, 40));
         border-color: transparent;
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04),
                     0 1px 3px rgba(16, 24, 40, 0.06);
     }
-    /* The sticky Dashboard filter bar keeps its own background + scroll-state
-       shadow (above); just drop its stroke to match the other cards. */
-    .st-key-ov_bar {
+    /* The sticky filter bars (Dashboard + Correlation) keep their own background
+       + scroll-state shadow (above) — so they're excluded from the static-card
+       fill block; just drop their stroke to match the other cards. */
+    .st-key-ov_bar,
+    .st-key-corr_bar {
         border-color: transparent;
     }
 
@@ -486,18 +490,18 @@ st.html(
 
 page.run()
 
-# Sticky Dashboard filter bar + scroll-condense header title. Runs GLOBALLY
-# (in the entrypoint, on every page) — not in dashboard.py — because the header
-# title is a child of the persistent top header, so something must run on the
-# *other* pages too to hide it (else a stale "Dashboard" would linger after you
-# scroll the hub then navigate away). Done in JS (not a CSS scroll-timeline) so
-# it works in Safari/Firefox. In a 0-height same-origin iframe reaching the
-# parent DOM. The iframe can be destroyed/recreated on navigation, so it must
-# NOT gate re-binding on flags parked on persistent DOM — each run re-binds
-# fresh in its own live context, tearing down the prior run's listener
-# (stMain.__ovSync), ResizeObserver (stMain.__ovRO) and MutationObserver
-# (window.parent.__ovMO) first. On non-Dashboard pages `.st-key-ov_bar` is
-# absent, so sync() just hides the title and returns.
+# Sticky filter bar (Dashboard + Correlation) + scroll-condense header title.
+# Runs GLOBALLY (in the entrypoint, on every page) — not in the page modules —
+# because the header title is a child of the persistent top header, so something
+# must run on the *other* pages too to hide it (else a stale page name would
+# linger after you scroll a bar page then navigate away). Done in JS (not a CSS
+# scroll-timeline) so it works in Safari/Firefox. In a 0-height same-origin
+# iframe reaching the parent DOM. The iframe can be destroyed/recreated on
+# navigation, so it must NOT gate re-binding on flags parked on persistent DOM —
+# each run re-binds fresh in its own live context, tearing down the prior run's
+# listener (stMain.__ovSync), ResizeObserver (stMain.__ovRO) and MutationObserver
+# (window.parent.__ovMO) first. On pages without a filter bar (neither
+# `.st-key-ov_bar` nor `.st-key-corr_bar`), sync() just hides the title and returns.
 components.html(
     """
     <script>
@@ -517,10 +521,10 @@ components.html(
         return t;
       }
       function sync() {
-        const bar = doc.querySelector('.st-key-ov_bar');
+        const bar = doc.querySelector('.st-key-ov_bar, .st-key-corr_bar');
         const main = doc.querySelector('[data-testid="stMain"]');
         const title = headerTitle();
-        if (!bar || !main) {            /* not the Dashboard -> never show the title */
+        if (!bar || !main) {            /* no filter bar on this page -> never show the title */
           if (title) title.classList.remove('ov-visible');
           return;
         }

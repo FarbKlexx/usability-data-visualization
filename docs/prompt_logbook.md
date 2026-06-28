@@ -1884,3 +1884,32 @@ reused).
   render; 17 alert boxes present; the DB "Technical detail" expander opens; **the
   page is absent from the nav rail** (`inNav: false`) yet loads at `/states`.
   `uv run pytest` → 30 passed.
+
+## 72. Make the Correlation toolbar sticky like the Dashboard's
+
+> can you fix the device selector on the correlation page since it doesnt match
+> the stickyness behviour like on the dashboard
+
+**Summary of changes:**
+
+- **Root cause:** the sticky-on-scroll machinery in `app.py` was hardcoded to the
+  Dashboard's filter-bar key `.st-key-ov_bar`. The Correlation toolbar is the same
+  `filter_bar` component but with the `corr` prefix (`.st-key-corr_bar`), so it was
+  only styled as a static card and never stuck.
+- **`app.py` (CSS)** — added `.st-key-corr_bar` alongside `.st-key-ov_bar` in every
+  sticky rule: the `stLayoutWrapper:has(> …)` `position: sticky` selector, the bar
+  base (width/background/transition), the `.ov-stuck` morph, and the
+  `border-color: transparent` reset. Also **removed** `.st-key-corr_bar` from the
+  static-card fill block so it uses the sticky background and morphs exactly like
+  `ov_bar` (no leftover at-rest card shadow / elevated fill).
+- **`app.py` (JS watcher)** — the global scroll-watcher now finds either bar
+  (`querySelector('.st-key-ov_bar, .st-key-corr_bar')`); the rest (full-bleed
+  geometry + the scroll-condense header title from the active nav link) is generic,
+  so on Correlation it surfaces "Correlation" in the fixed header when stuck.
+  Updated the surrounding comments.
+- **`CLAUDE.md`** — updated Theming exception 1 to note the sticky bar now covers
+  both the Dashboard and Correlation toolbars.
+- **Verified with Playwright**: on `/correlation`, scrolling toggles `ov-stuck`,
+  sets the full-bleed inline width, and shows the "Correlation" header title;
+  regression-checked the Dashboard still sticks ("Dashboard" title) and a no-bar
+  page (Devices) shows no stale title. `uv run pytest` → 30 passed.

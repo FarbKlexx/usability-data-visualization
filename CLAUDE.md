@@ -231,15 +231,19 @@ Streamlit gives no config hook for, all verified theme-safe in light
 **and** dark:
 
 1. makes the **Dashboard** filter bar (`.st-key-ov_bar`, via the
-   `key="ov_bar"` hook) **sticky on scroll**, where it condenses and
-   **full-bleeds across the main content column**, reverting to the
+   `key="ov_bar"` hook) **and the Correlation toolbar** (`.st-key-corr_bar`,
+   the `corr` prefix) **sticky on scroll** — both bars are the same
+   `filter_bar` component, so the sticky CSS + watcher target both keys (and
+   `corr_bar` is excluded from the static-card fill block so it morphs like
+   `ov_bar` instead of sitting as a plain card). When stuck the bar condenses
+   and **full-bleeds across the main content column**, reverting to the
    contained card when scrolled back up. When stuck, it also surfaces the
    **page name in the fixed top header** (`.ov-header-title`, a
    scroll-condense title): the watcher injects it as a child of `stHeader`,
    sets its left edge to the main column (so it sits over the bar), reads the
    clean name from the active nav link's `span[label]`, and toggles
-   `.ov-visible`. It's hidden whenever `.st-key-ov_bar` is absent (i.e. on
-   every other page), which is the main reason the watcher is global.
+   `.ov-visible`. It's hidden whenever neither bar is present (i.e. on
+   every page without a filter bar), which is the main reason the watcher is global.
    - Sticky is set on the bar's `stLayoutWrapper` (`:has()`), since the
      bar's own wrapper is too short to stick; `top: 3.5rem` clears
      Streamlit's 56px fixed header.
@@ -257,11 +261,12 @@ Streamlit gives no config hook for, all verified theme-safe in light
      too (Streamlit clamps these blocks to `max-width:100%`). A
      `MutationObserver` re-binds across reruns and a `ResizeObserver` on
      `stMain` re-syncs when the sidebar opens/closes or the window resizes.
-   - **Why global (in `app.py`), not `dashboard.py`:** the header title is a
+   - **Why global (in `app.py`), not the page modules:** the header title is a
      child of the *persistent* top header, so something must run on the other
-     pages too to hide it — else a stale "Dashboard" lingers after you scroll
-     the hub then leave. On non-Dashboard pages `.st-key-ov_bar` is absent, so
-     `sync()` just clears `.ov-visible` and returns.
+     pages too to hide it — else a stale page name lingers after you scroll
+     a bar page then leave. On pages without a filter bar (neither
+     `.st-key-ov_bar` nor `.st-key-corr_bar`), `sync()` just clears
+     `.ov-visible` and returns.
    - **The iframe is destroyed and recreated on page switch**, so its
      listener/observers (which live in that JS context) die — but `stMain`
      persists. The watcher therefore must **not** gate re-binding on flags
