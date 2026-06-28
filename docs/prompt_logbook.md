@@ -1853,3 +1853,34 @@ reused).
   themed controls + meter + thresholds table all correct; auto-contrast ink works
   (black on yellow, white on dark purple); **the page is absent from the nav rail**
   (`inNav: false`) yet loads at `/theme`. `uv run pytest` → 30 passed.
+
+## 70. Hidden gallery of the app's error / empty-state messages
+
+> I also need a way to simulate error messages that are currently present in
+> this page, how can you show me them in the frontend so i can make a screenshot
+
+**Summary of changes:**
+
+- **`app_pages/states.py`** (new) — a hidden **Error & Empty States** page that
+  reproduces, verbatim (exact text + icon), every feedback message the app shows,
+  so each can be screenshotted for the report without recreating its trigger.
+  Grouped in `box_states_*` cards: the four generic styles (success/info/warning/
+  error); the empty / no-data states (filter-bar "select a sensor", the two
+  dashboard "no routes" infos, the two correlation infos/warnings); the three
+  route-detail link states; the four settings states (not-migrated warning + info,
+  save success, write error); and the full-page **DB-unreachable** block (error +
+  "Technical detail" expander with a sample `psycopg.OperationalError`). Each
+  message carries a small caption naming its live call site.
+- **`app.py`** — registered the page with `visibility="hidden"` and icon
+  `:material/report:`, so it is **not in the nav rail** and is reachable only at
+  **`/states`** (same pattern as the hidden Route-detail and Theme pages).
+- Inventoried the live messages first via grep of `st.error/warning/info/success`
+  across `app.py`, `app_pages/` and `src/components/` so the gallery matches the
+  real call sites (13 alerts + the DB block); the strings are mirrored by hand
+  (no shared message registry exists).
+- **`CLAUDE.md`** — documented the new hidden page (file tree, Navigation note,
+  Pages table row).
+- **Verified with Playwright**: no exceptions; all five `box_states_*` cards
+  render; 17 alert boxes present; the DB "Technical detail" expander opens; **the
+  page is absent from the nav rail** (`inNav: false`) yet loads at `/states`.
+  `uv run pytest` → 30 passed.

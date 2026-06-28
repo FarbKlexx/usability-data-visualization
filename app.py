@@ -70,6 +70,13 @@ PAGES = {
             icon=":material/palette:",
             visibility="hidden",
         ),
+        # Feedback/error-message gallery; reachable only by URL (/states), not in the rail.
+        st.Page(
+            "app_pages/states.py",
+            title="Error & Empty States",
+            icon=":material/report:",
+            visibility="hidden",
+        ),
     ],
 }
 
