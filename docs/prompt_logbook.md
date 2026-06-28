@@ -1816,3 +1816,40 @@ reused).
 - **Verified with Playwright**: no exceptions; `box_quality` and `box_edit` are
   gone; hero + KPI strip + coverage + catalog remain (4 metric tiles).
   `uv run pytest` → 30 passed.
+
+## 69. Hidden Theme & Design System showcase page
+
+> i need a subpage that is not reachable from the user interface that just
+> basically visualizes the whole theme of the UI. can you create that
+
+**Summary of changes:**
+
+- **`app_pages/theme.py`** (new) — a hidden **Theme & Design System** page that
+  visualises the live UI theme in bordered `box_theme_*` cards: base tokens
+  (light + dark), the Okabe-Ito categorical palette + the config colorway,
+  Viridis sequential, the CAQI band colours + the live air-quality meter +
+  a thresholds table, the metric-registry colours, the full type scale + badges,
+  and live components (KPI tiles via `metric_tile`/`aqi_tile`, buttons/segmented/
+  select/slider/toggle, skeleton loaders, and a demo `line_chart` with area
+  gradient + CAQI band guides). Everything is read **live** from the real
+  sources, so it can't drift from what ships.
+- **`app.py`** — registered the page in the `PAGES` dict with
+  `visibility="hidden"` and icon `:material/palette:`, so it is **not in the nav
+  rail** and is reachable only by URL at **`/theme`** (same mechanism as the
+  hidden Route-detail page).
+- **`src/utils/theme.py`** (new) — `theme_config()`, a pure read of the live
+  `[theme]` block of `.streamlit/config.toml` (incl. `[theme.dark]`), so the page
+  documents the actual tokens and stays I/O-free.
+- **`src/components/charts.py`** — added `palette_swatches()` (a Plotly swatch
+  grid: filled rectangles + hex labels) and `_text_on()` (WCAG-luminance pick of
+  black/white label ink). Colour swatches go through the **chart layer**, not
+  ad-hoc CSS — respecting the project's styling rule; the hex is always printed,
+  so colour is never the only channel.
+- **`CLAUDE.md`** — documented the new hidden page (file tree, Navigation note,
+  Pages table), `theme_config()` in the utils list, and `palette_swatches` in the
+  charts builder list.
+- **Verified with Playwright** (light + dark): no exceptions; all 10
+  `box_theme_*` cards render; 7 swatch grids + the demo chart draw; KPI tiles +
+  themed controls + meter + thresholds table all correct; auto-contrast ink works
+  (black on yellow, white on dark purple); **the page is absent from the nav rail**
+  (`inNav: false`) yet loads at `/theme`. `uv run pytest` → 30 passed.

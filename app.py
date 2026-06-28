@@ -63,6 +63,13 @@ PAGES = {
             title="Settings",
             icon=":material/tune:",
         ),
+        # Design-system showcase; reachable only by URL (/theme), not in the rail.
+        st.Page(
+            "app_pages/theme.py",
+            title="Theme & Design System",
+            icon=":material/palette:",
+            visibility="hidden",
+        ),
     ],
 }
 

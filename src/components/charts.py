@@ -792,3 +792,67 @@ def track_palette(i: int) -> str:
     # skip index 0 (black) and yellow (low contrast on map) for line colors
     picks = (OKABE_ITO[6], OKABE_ITO[5], OKABE_ITO[3], OKABE_ITO[7], OKABE_ITO[1], OKABE_ITO[2])
     return picks[i % len(picks)]
+
+
+# --- Theme / design-system showcase (hidden Theme page) ---------------------
+
+
+def _text_on(hex_color: str) -> str:
+    """Black or white ink — whichever reads better on ``hex_color`` (WCAG luminance)."""
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return "#000000"
+    r, g, b = (int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+    def _lin(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    lum = 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
+    # contrast vs white = 1.05/(lum+0.05); vs black = (lum+0.05)/0.05
+    return "#000000" if (lum + 0.05) / 0.05 >= 1.05 / (lum + 0.05) else "#FFFFFF"
+
+
+def palette_swatches(
+    items: list[tuple[str, str]],
+    *,
+    ncols: int | None = None,
+    height: int | None = None,
+    swatch_h: int = 66,
+) -> go.Figure:
+    """A grid of colour swatches for the Theme showcase page.
+
+    ``items`` is ``[(hex, label)]``; each cell is a rectangle in that colour with
+    the label + hex printed inside in auto-contrasting ink (:func:`_text_on`), so
+    every swatch is legible in light and dark and the hex is always shown —
+    colour is never the only channel. Pure presentation; the fills are
+    theme-independent (a swatch must show its true colour in either theme).
+    """
+    n = len(items)
+    if n == 0:
+        return _empty("No colours.")
+    ncols = ncols or n
+    nrows = (n + ncols - 1) // ncols
+    fig = go.Figure()
+    for idx, (hexv, label) in enumerate(items):
+        r, c = divmod(idx, ncols)
+        x0, x1 = c + 0.04, c + 0.96
+        y_top = nrows - r
+        y0, y1 = y_top - 0.92, y_top - 0.04
+        fig.add_shape(
+            type="rect", x0=x0, x1=x1, y0=y0, y1=y1,
+            fillcolor=hexv, line=dict(width=0), layer="below",
+        )
+        fig.add_annotation(
+            x=(x0 + x1) / 2, y=(y0 + y1) / 2,
+            text=f"<b>{label}</b><br>{hexv}", showarrow=False,
+            font=dict(color=_text_on(hexv), size=12), align="center",
+        )
+    fig.update_xaxes(visible=False, range=[0, ncols], fixedrange=True)
+    fig.update_yaxes(visible=False, range=[0, nrows], fixedrange=True)
+    fig.update_layout(
+        height=height or (swatch_h * nrows + 16),
+        margin=dict(l=4, r=4, t=4, b=4),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+    )
+    return fig

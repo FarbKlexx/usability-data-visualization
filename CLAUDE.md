@@ -102,10 +102,10 @@ compatible interpreter on first `uv sync` if none is available.
 
 ```
 app.py              ── thin router: page_config + st.navigation + a cached DB-health guard
-app_pages/*.py      ── one module per page; UI only (dashboard [hub], correlation, devices, settings + route [hidden drill-down]). correlation.py has its own corr single-sensor toolbar. route.py is a hidden page (visibility="hidden") opened from the Dashboard's mobile Routes list via st.switch_page(query_params=…); it reads the trip from the URL params. (Time Series, Compare and Map pages were removed; "Full map" on the Dashboard is now an @st.dialog map overlay.)
+app_pages/*.py      ── one module per page; UI only (dashboard [hub], correlation, devices, settings + route [hidden drill-down] + theme [hidden design-system showcase]). correlation.py has its own corr single-sensor toolbar. route.py is a hidden page (visibility="hidden") opened from the Dashboard's mobile Routes list via st.switch_page(query_params=…); it reads the trip from the URL params. theme.py is a hidden page (visibility="hidden", reachable only at /theme) that visualises the live theme — colour swatches (via charts.palette_swatches), the type scale and the real components — read from config.toml + the palette/registry modules. (Time Series, Compare and Map pages were removed; "Full map" on the Dashboard is now an @st.dialog map overlay.)
 src/
   components/       ── reusable UI primitives
-    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap). Line builders draw a gently spline-smoothed curve (`_SPLINE`, kept low so it doesn't invent peaks) with a fade-to-transparent vertical area gradient in the series colour (`_area_gradient`), but only for zero-based measures (fill-to-0 is meaningless for temp/pressure). `line_chart` also takes `band_guides` (a list of `{y,label,color,dash}` dicts) — faint reference lines (e.g. CAQI bands) drawn under the series, range-filtered so a far band never stretches the axis, with collision-avoided labels; colour+dash+label distinguish e.g. PM2.5 (dotted) from PM10 (dashed), never colour alone. Chart/map corners are rounded by CSS in app.py (`stPlotlyChart` border-radius + overflow:hidden).
+    charts.py       ──   plotly builders (line/small_multiples/grouped_bar/box/map/route_map/particle/coverage + correlation: normalized_overlay/scatter_correlation/correlation_heatmap + palette_swatches [colour-swatch grid for the hidden Theme page, auto-contrasting label ink via _text_on]). Line builders draw a gently spline-smoothed curve (`_SPLINE`, kept low so it doesn't invent peaks) with a fade-to-transparent vertical area gradient in the series colour (`_area_gradient`), but only for zero-based measures (fill-to-0 is meaningless for temp/pressure). `line_chart` also takes `band_guides` (a list of `{y,label,color,dash}` dicts) — faint reference lines (e.g. CAQI bands) drawn under the series, range-filtered so a far band never stretches the axis, with collision-avoided labels; colour+dash+label distinguish e.g. PM2.5 (dotted) from PM10 (dashed), never colour alone. Chart/map corners are rounded by CSS in app.py (`stPlotlyChart` border-radius + overflow:hidden).
     kpi.py          ──   metric_tile + aqi_tile
     filter_bar.py   ──   global sensor + time-range toolbar (returns a FilterState; group_by_type for the unified picker)
     skeleton.py     ──   content-shaped loading placeholders (hero/tiles/tiles_stack/block/lines); styled by the .aq-skel* CSS in app.py
@@ -122,6 +122,7 @@ src/
     aqi.py          ──   EU CAQI band classification (derived) + plain-language quality word/advice (hub status) + caqi_pm_thresholds (per-pollutant band-boundary concentrations for the chart's guide lines) + caqi_meter_zones (zone centres+words for the meter labels)
     correlate.py    ──   normalize_frame + Pearson/Spearman compute_correlation (scipy-free) + lay |r| correlation_verdict (hub)
     state.py        ──   cross-filter window + sensor hand-off + URL query-param sharing
+    theme.py        ──   theme_config(): parse the live [theme] block of config.toml (for the hidden Theme showcase page; pure file read, no DB)
     text.py         ──   escape_md (markdown-injection guard for user text)
     accessibility.py──   a11y helpers (placeholder)
 .streamlit/config.toml          ── theme (colorblind-safe palette, light + dark)
@@ -160,6 +161,7 @@ Registered explicitly in `app.py`; each is read-only unless noted.
 | **Correlation** | Single-sensor: do two measures move together? Verdict-first \|r\| badge then scatter/overlay (2 measures) or heatmap (3+). Own `corr` toolbar + bookmarkable URL state. **Mirrors the hub's tile-card layout**: a verdict **hero** card (`box_corr_verdict`, strongest \|r\| pair as the focal point) over a **chart tile** (`box_corr_chart`, scatter/overlay toggle top-right), both skeleton-swapped. | — |
 | **Devices & Data Quality** | Device catalog + data-availability timeline. **Mirrors the hub's cockpit layout**: a verdict **hero** card (`box_dev_hero`, the dataset at a glance — total readings / active sensors / record span / coverage) over a **KPI strip** (registered · with-data · no-table · external), then bordered `box_*` tile cards — `box_coverage` (data-availability timeline) and `box_catalog` (the device table). Icon+title headers with operating hints in tooltips; skeleton-swapped loads (the box+title render immediately, only the data area waits). *(The data-quality audit and the device-edit form were removed from this page; the `update_object` write API + the saturation-sentinel loaders remain in `src/` but no page calls them.)* | — |
 | **Settings** | Slim admin surface: persisted thresholds (add/delete). *Feature-flag toggles removed — the optional modules are always on.* | thresholds |
+| **Theme & Design System** *(hidden)* | Design-system showcase, **not in the rail** — reachable only at `/theme`. Visualises the live theme in `box_theme_*` cards: base tokens (light + dark), the Okabe-Ito categorical + config colorway, Viridis sequential, the CAQI band colours + meter + thresholds, the metric-registry colours, the type scale + badges, and live components (KPI tiles, controls, skeletons, a demo `line_chart`). Colour swatches render via `charts.palette_swatches` (Plotly, no ad-hoc CSS); tokens are read live via `theme_config()`, so it never drifts from what ships. | — |
 
 The **Time Series**, **Compare** and **Map** pages were removed. "Full
 map" on the Dashboard now opens the map in a modal overlay rather than a
@@ -189,7 +191,9 @@ Each `st.Page` carries a Material Symbols icon (`:material/dashboard:`,
 `scatter_plot`, `sensors`, `tune`) — these are the rail glyphs, so a new
 page **must** pass a sensible `icon=` or the rail shows a blank slot. The
 hidden **Route detail** page (`visibility="hidden"`) carries `route` but
-is not shown in the rail.
+is not shown in the rail. The hidden **Theme & Design System** page
+(`visibility="hidden"`, icon `palette`) is likewise off the rail —
+reachable only at `/theme`.
 The pages directory is named **`app_pages/`, not `pages/`**, on purpose —
 `pages/` would trigger Streamlit's legacy auto-discovery and
 double-register every page.
